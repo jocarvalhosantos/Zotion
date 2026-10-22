@@ -9,7 +9,23 @@ export type BlockType =
   | "quote"
   | "callout"
   | "code"
+  | "meeting"
   | "divider";
+
+export interface MeetingActionItem {
+  id: string;
+  text: string;
+  owner: string;
+  done: boolean;
+}
+
+export interface MeetingNotesData {
+  agenda: string;
+  participants: string;
+  transcript: string;
+  summary: string;
+  actionItems: MeetingActionItem[];
+}
 
 export interface ContentBlock {
   id: string;
@@ -17,6 +33,7 @@ export interface ContentBlock {
   text: string;
   checked?: boolean;
   groupId?: string;
+  meeting?: MeetingNotesData;
 }
 
 export type TaskStatus = "Not started" | "In progress" | "Done";
@@ -224,11 +241,12 @@ export function createInitialWorkspace(): WorkspaceData {
         createdAt: initialTime,
         updatedAt: initialTime,
         blocks: [
-          { id: "meeting-heading", type: "heading2", text: "Reunião semanal" },
-          { id: "meeting-date", type: "paragraph", text: "Adicione aqui a pauta, as decisões e os próximos passos." },
-          { id: "meeting-divider", type: "divider", text: "" },
-          { id: "meeting-todo-1", type: "todo", text: "Compartilhar atualizações antes da reunião", checked: false },
-          { id: "meeting-todo-2", type: "todo", text: "Registrar decisões e responsáveis", checked: false },
+          {
+            id: "meeting-block",
+            type: "meeting",
+            text: "Reunião semanal",
+            meeting: { agenda: "", participants: "", transcript: "", summary: "", actionItems: [] },
+          },
         ],
       },
       {
@@ -335,6 +353,10 @@ export function createInitialWorkspace(): WorkspaceData {
 
 export function makeId(prefix = "item"): string {
   return `${prefix}-${crypto.randomUUID()}`;
+}
+
+export function createEmptyMeetingData(): MeetingNotesData {
+  return { agenda: "", participants: "", transcript: "", summary: "", actionItems: [] };
 }
 
 export function createDefaultDatabaseView(): DatabaseViewSettings {

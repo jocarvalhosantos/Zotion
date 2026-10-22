@@ -7,6 +7,7 @@ import {
   Command,
   Database,
   FilePlus2,
+  Mic,
   Menu,
   Moon,
   MoreHorizontal,
@@ -21,8 +22,9 @@ import {
 } from "lucide-react";
 import { BlockEditor } from "./BlockEditor";
 import { DatabaseView } from "./DatabaseView";
-import { createDefaultDatabaseView, createInitialWorkspace, formatUpdatedAt, makeId } from "./model";
+import { createDefaultDatabaseView, createEmptyMeetingData, createInitialWorkspace, formatUpdatedAt, makeId } from "./model";
 import type { ContentBlock, DatabaseFilterGroup, DatabaseFilterNode, Page, WorkspaceData } from "./model";
+import { removeOrphanedMeetingAudio } from "./meetingAudioStore";
 import "./App.css";
 
 const STORAGE_KEY = "workspace-lab-v1";
@@ -42,7 +44,14 @@ function loadWorkspace(): WorkspaceData {
 
 function getPageContent(page: Page): string {
   return [
-    ...page.blocks.map((block) => block.text),
+    ...page.blocks.flatMap((block) => [
+      block.text,
+      block.meeting?.agenda ?? "",
+      block.meeting?.participants ?? "",
+      block.meeting?.transcript ?? "",
+      block.meeting?.summary ?? "",
+      ...(block.meeting?.actionItems ?? []).flatMap((item) => [item.text, item.owner]),
+    ]),
     ...(page.rows ?? []).flatMap((row) => [
       row.title,
       row.status,
@@ -66,7 +75,7 @@ function pageAncestors(page: Page, pages: Page[]): Page[] {
 
 function App() {
   const [workspace, setWorkspace] = useState<WorkspaceData>(loadWorkspace);
-  const [saveState, setSaveState] = useState<"saved" | "saving">("saved");
+  const [saveState, setSaveState] = useState<"saved" | "saving" | "error">("saved");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -89,11 +98,23 @@ function App() {
         window.localStorage.setItem(STORAGE_KEY, JSON.stringify(workspace));
         setSaveState("saved");
       } catch {
-        setSaveState("saved");
+        setSaveState("error");
       }
     }, 280);
     return () => window.clearTimeout(timeout);
   }, [workspace]);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      const meetingBlockIds = workspace.pages.flatMap((page) => page.blocks.filter((block) => block.type === "meeting").map((block) => block.id));
+      void removeOrphanedMeetingAudio(meetingBlockIds).catch(() => {
+        // Audio remains local if browser storage is unavailable; notes continue to work.
+      });
+    }, 10000);
+    return () => window.clearTimeout(timeout);
+  }, [workspace.pages]);
+
+  const handleSaveState = saveState === "saved" ? "Salvo" : saveState === "saving" ? "Salvando" : "Falha ao salvar";
 
   useEffect(() => {
     if (searchOpen) {
@@ -146,6 +167,24 @@ function App() {
     };
     setWorkspace((current) => ({ ...current, pages: [...current.pages, page], activePageId: id }));
     if (parentId) setExpandedPages((current) => current.includes(parentId) ? current : [...current, parentId]);
+    setSidebarOpen(true);
+    setMobileMenuOpen(false);
+  };
+
+  const createMeeting = () => {
+    const id = makeId("page");
+    const now = new Date().toISOString();
+    const page: Page = {
+      id,
+      title: "Nova reunião",
+      icon: "🎙️",
+      parentId: null,
+      kind: "document",
+      blocks: [{ id: makeId("block"), type: "meeting", text: "Nova reunião", meeting: createEmptyMeetingData() }],
+      createdAt: now,
+      updatedAt: now,
+    };
+    setWorkspace((current) => ({ ...current, pages: [...current.pages, page], activePageId: id }));
     setSidebarOpen(true);
     setMobileMenuOpen(false);
   };
@@ -258,6 +297,7 @@ function App() {
 
         <div className="sidebar-quick-actions">
           <button type="button" className="sidebar-action" onClick={() => setSearchOpen(true)}><Search size={16} /><span>Buscar</span><kbd>Ctrl K</kbd></button>
+          <button type="button" className="sidebar-action" onClick={createMeeting}><Mic size={16} /><span>Nova reunião</span></button>
           <button type="button" className="sidebar-action" onClick={() => createPage("document", null)}><FilePlus2 size={16} /><span>Nova página</span><kbd>Ctrl N</kbd></button>
           <button type="button" className="sidebar-action" onClick={() => createPage("database", null)}><Database size={16} /><span>Nova base de dados</span></button>
         </div>
@@ -274,7 +314,7 @@ function App() {
         </section>
 
         <div className="sidebar-bottom">
-          <div className="storage-status"><span className={`save-dot ${saveState}`} />{saveState === "saved" ? "Salvo neste navegador" : "Salvando…"}</div>
+          <div className="storage-status"><span className={`save-dot ${saveState}`} />{saveState === "saved" ? "Salvo neste navegador" : saveState === "saving" ? "Salvando…" : "Falha ao salvar"}</div>
           <button className="sidebar-action settings-shortcut" type="button" onClick={() => setWorkspaceMenuOpen((open) => !open)}><Settings2 size={15} /><span>Configurações do espaço</span></button>
         </div>
       </aside>
@@ -293,7 +333,7 @@ function App() {
             </nav>
           </div>
           <div className="topbar-right">
-            <span className="save-status-top"><span className={`save-dot ${saveState}`} />{saveState === "saved" ? "Salvo" : "Salvando"}</span>
+            <span className="save-status-top"><span className={`save-dot ${saveState}`} />{handleSaveState}</span>
             <button type="button" className="icon-button" title={currentIsFavorite ? "Remover dos favoritos" : "Adicionar aos favoritos"} aria-label={currentIsFavorite ? "Remover dos favoritos" : "Adicionar aos favoritos"} onClick={() => currentPage && toggleFavorite(currentPage.id)}><Star size={16} fill={currentIsFavorite ? "currentColor" : "none"} className={currentIsFavorite ? "favorite-active" : ""} /></button>
             <div className="page-menu-wrap">
               <button type="button" className="icon-button" title="Opções da página" aria-label="Opções da página" onClick={() => setPageMenuOpen((open) => !open)}><MoreHorizontal size={19} /></button>

@@ -179,6 +179,14 @@ A documentação oficial do Notion descreve formulários ligados a propriedades 
 
 A documentação oficial também descreve fórmulas que leem propriedades e combinam operadores e funções. A aplicação implementa um subconjunto próprio: `prop("Nome")`, aritmética, comparações, lógica, ternário e funções comuns de texto, matemática e datas. A expressão é analisada por um parser local sem executar JavaScript arbitrário; valores calculados podem ser exibidos, filtrados e ordenados. Não há compatibilidade completa com a linguagem do Notion, edição assistida, formatação de estilo nem operações avançadas sobre listas de páginas relacionadas. Esta reconstrução é guiada pela documentação, não por evidência REA do motor de fórmulas.
 
+### Reuniões e gravação local
+
+A documentação atual do Notion descreve o comando `/meet`, a preparação de uma pauta, o início da transcrição e a geração de resumo e ações ao encerrar. No navegador do Notion, a captura é pelo microfone; o app desktop pode capturar também o áudio do sistema. A documentação informa que AI Meeting Notes envia áudio a subprocessadores para transcrição em tempo real. Esses são fatos documentados do produto, não evidência do REA sobre sua implementação interna. [Notion: AI Meeting Notes](https://www.notion.com/help/ai-meeting-notes)
+
+Nesta reconstrução, `/meet` insere um bloco com pauta, lista manual de participantes, resumo, transcrição editável e ações com responsável e estado. A gravação só começa após confirmação explícita de autorização de todas as pessoas e permissão do microfone pelo navegador. Ela captura o microfone, permite pausar/retomar e salva cada trecho finalizado separadamente no IndexedDB do navegador. Os trechos podem ser reproduzidos, baixados e excluídos. Ao excluir o bloco, o app pede confirmação antes de apagar os áudios associados. O deploy estático não recebe arquivos de áudio.
+
+Não há transcrição de fala, identificação de participantes, captura de áudio do sistema, integração de calendário ou serviço de IA. O botão de rascunho local seleciona frases da transcrição digitada/colada usando regras simples e deixa o resultado editável; não ouve nem processa o arquivo gravado. A pauta, transcrição, resumo e ações entram no backup JSON, mas os arquivos de áudio precisam ser baixados à parte. A persistência depende do armazenamento do mesmo navegador/perfil e pode ser apagada pelas configurações do navegador.
+
 ```mermaid
 flowchart LR
   U[Pessoa usuária] --> W[Interface React]
@@ -186,6 +194,7 @@ flowchart LR
   W --> D[Vistas de base de dados]
   W --> S[Busca e navegação]
   E --> L[(localStorage do navegador)]
+  E --> I[(IndexedDB: áudios de reunião)]
   D --> L
   S --> L
   C[Coolify: container Nginx] -->|arquivos estáticos| W
@@ -193,9 +202,9 @@ flowchart LR
 
 ## Escopo implementado e lacunas
 
-Implementado nesta versão: navegação hierárquica, favoritos, edição e seleção múltipla de blocos, cópia/recorte/colagem estruturada na sessão atual, duplicação, exclusão, reordenação em lote e agrupamento/desagrupamento visual de blocos contíguos, comandos `/` e atalhos Markdown para blocos, tarefas com checkbox, bases com oito vistas (incluindo gráficos locais de barras e rosca e formulários locais), perguntas de formulário configuráveis com validação obrigatória e confirmação, propriedades personalizáveis de tipos básicos, fórmulas com referências `prop("Nome")`, operadores aritméticos/lógicos, comparações, ternário e funções comuns, relações locais de uma via, rollups calculados entre bases, busca local, vistas nomeadas com layout, filtros AND/OR com grupos aninháveis até três níveis, várias ordenações sequenciais por vista e agrupamento e subagrupamento de linhas na Tabela, tema claro/escuro e backup JSON.
+Implementado nesta versão: navegação hierárquica, favoritos, edição e seleção múltipla de blocos, cópia/recorte/colagem estruturada na sessão atual, duplicação, exclusão, reordenação em lote e agrupamento/desagrupamento visual de blocos contíguos, comandos `/` incluindo `/meet`, atalho para criar reunião e atalhos Markdown para blocos, tarefas com checkbox, notas e gravação local de reuniões pelo microfone, reprodução/download/exclusão de trechos, pauta, participantes, transcrição editável, resumo heurístico e ações com responsáveis, bases com oito vistas (incluindo gráficos locais de barras e rosca e formulários locais), perguntas de formulário configuráveis com validação obrigatória e confirmação, propriedades personalizáveis de tipos básicos, fórmulas com referências `prop("Nome")`, operadores aritméticos/lógicos, comparações, ternário e funções comuns, relações locais de uma via, rollups calculados entre bases, busca local, vistas nomeadas com layout, filtros AND/OR com grupos aninháveis até três níveis, várias ordenações sequenciais por vista e agrupamento e subagrupamento de linhas na Tabela, tema claro/escuro e backup JSON.
 
-Fora do escopo: persistência do clipboard estruturado entre sessões, login, sincronização, colaboração em tempo real, permissões, comentários, integrações, API do Notion, anexos, propriedades automáticas, linguagem completa de fórmulas do Notion e operações avançadas de listas/relações, relações inversas, agrupamento fora da Tabela, reordenação manual das opções de seleção depois de criadas, publicação de formulários para acesso externo, coleta compartilhada de respostas, feeds, mapas, dashboards, gráficos de linha e paridade visual/comportamental completa. Não há serviço de backend; perfis de navegador não compartilham dados.
+Fora do escopo: persistência do clipboard estruturado entre sessões, login, sincronização, colaboração em tempo real, permissões, comentários, integrações, API do Notion, anexos, propriedades automáticas, linguagem completa de fórmulas do Notion e operações avançadas de listas/relações, relações inversas, agrupamento fora da Tabela, reordenação manual das opções de seleção depois de criadas, publicação de formulários para acesso externo, coleta compartilhada de respostas, transcrição automática, identificação de falantes, captura de áudio do sistema, integração com calendário, envio de áudio a serviços de IA, feeds, mapas, dashboards, gráficos de linha e paridade visual/comportamental completa. Não há serviço de backend; perfis de navegador não compartilham dados.
 
 ## Referências
 
@@ -212,3 +221,4 @@ Fora do escopo: persistência do clipboard estruturado entre sessões, login, si
 - [Propriedades de bases de dados no Notion](https://www.notion.com/help/database-properties)
 - [Relações e rollups no Notion](https://www.notion.com/help/relations-and-rollups)
 - [Busca no Notion](https://www.notion.com/en-gb/help/search)
+- [AI Meeting Notes no Notion](https://www.notion.com/help/ai-meeting-notes)

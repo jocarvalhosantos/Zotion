@@ -6,6 +6,7 @@ Uma aplicação web de estudo, em português, inspirada nos conceitos observados
 
 - Páginas hierárquicas, favoritos e navegação por trilha.
 - Editor de blocos com títulos, listas, tarefas, citações, destaques, código e divisores. Use `/` ou atalhos Markdown para inserir blocos; selecione vários com `Shift` + clique ou setas e copie, recorte, duplique, agrupe, desagrupe, exclua ou reordene a seleção. A cópia estruturada preserva tipos e grupos na sessão atual.
+- Atalho “Nova reunião” e bloco `/meet` para pauta, participantes, gravação local pelo microfone, reprodução e download do áudio, transcrição editável, resumo, decisões e itens de ação com responsáveis. O rascunho do resumo é heurístico e roda no navegador; não há transcrição automática nem envio de áudio para IA externa.
 - Bases de dados com vistas de tabela, quadro, lista, calendário, galeria, linha do tempo, gráficos de barras/rosca e formulários locais. Formulários permitem configurar perguntas visíveis e obrigatórias, descrições e confirmação de envio; as respostas criam linhas na base atual.
 - Propriedades personalizáveis de texto, número, seleção, seleção múltipla, data, checkbox, URL, e-mail, telefone, pessoa (texto simples), relação local de uma via, rollup calculado e fórmulas com operadores e funções comuns de texto, matemática e datas.
 - Vistas nomeadas com configuração própria, filtros por propriedades e operadores com grupos AND/OR aninháveis até três níveis, várias ordenações em sequência, agrupamento e subagrupamento de linhas na tabela e movimentação de cartões.
@@ -15,7 +16,7 @@ Uma aplicação web de estudo, em português, inspirada nos conceitos observados
 
 ## Persistência e privacidade
 
-Esta versão é local-first: não tem conta, servidor de dados, sincronização, colaboração ou conexão com uma conta Notion. O conteúdo criado, inclusive respostas a formulários, fica no `localStorage` do navegador e só está disponível naquele navegador e perfil. O formulário não coleta respostas de outras pessoas em um servidor nem gera um link público. Exporte um backup antes de limpar os dados do navegador. O deploy público entrega os arquivos estáticos da aplicação; não recebe nem armazena as páginas criadas.
+Esta versão é local-first: não tem conta, servidor de dados, sincronização, colaboração ou conexão com uma conta Notion. Páginas, pautas, transcrições, resumos e ações ficam no `localStorage` do navegador; áudios de reunião ficam no `IndexedDB` da mesma origem e perfil. A gravação só começa após a confirmação de autorização dos participantes e a permissão do microfone. O navegador grava apenas o microfone. O formulário não coleta respostas de outras pessoas em um servidor nem gera um link público. Exporte um backup antes de limpar os dados do navegador; o backup JSON não inclui os arquivos de áudio, que podem ser baixados um por um no bloco da reunião. O deploy público entrega os arquivos estáticos da aplicação; não recebe nem armazena páginas ou gravações.
 
 ## Desenvolvimento
 
@@ -49,3 +50,4 @@ O método, as medidas de cobertura, os limites e as referências estão em [`doc
 - [Notion: formulários](https://www.notion.com/help/forms)
 - [Notion: propriedades de bases de dados](https://www.notion.com/help/database-properties)
 - [Notion: busca](https://www.notion.com/en-gb/help/search)
+- [Notion: AI Meeting Notes](https://www.notion.com/help/ai-meeting-notes)

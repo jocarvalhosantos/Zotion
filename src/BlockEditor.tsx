@@ -1,8 +1,11 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import type { ClipboardEvent, MouseEvent as ReactMouseEvent } from "react";
 import { ArrowDown, ArrowUp, Copy, GripVertical, Plus, Trash2, X } from "lucide-react";
 import { makeId } from "./model";
 import type { ContentBlock, BlockType } from "./model";
+import { createEmptyMeetingData } from "./model";
+import { MeetingNotesBlock } from "./MeetingNotesBlock";
+import { deleteMeetingAudioForBlock, listMeetingAudioSegments } from "./meetingAudioStore";
 
 interface BlockEditorProps {
   blocks: ContentBlock[];
@@ -27,6 +30,7 @@ const COMMANDS: BlockCommand[] = [
   { label: "Citação", shortcut: "quote", description: "Adicione uma citação ou destaque.", type: "quote" },
   { label: "Destaque", shortcut: "callout", description: "Realce uma anotação útil.", type: "callout" },
   { label: "Código", shortcut: "code", description: "Adicione um bloco de código.", type: "code" },
+  { label: "Gravação de reunião", shortcut: "meet", description: "Prepare a pauta, grave o microfone e registre ações localmente.", type: "meeting" },
   { label: "Divisor", shortcut: "divider", description: "Separe seções com uma linha.", type: "divider" },
 ];
 
@@ -83,7 +87,14 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
   const [selectedBlockIds, setSelectedBlockIds] = useState<string[]>([]);
   const [selectionAnchorId, setSelectionAnchorId] = useState<string | null>(null);
   const [selectionCursorId, setSelectionCursorId] = useState<string | null>(null);
+  const [busyMeetingIds, setBusyMeetingIds] = useState<string[]>([]);
   const selectedBlockSet = new Set(selectedBlockIds);
+
+  const handleRecorderBusyChange = useCallback((blockId: string, busy: boolean) => {
+    setBusyMeetingIds((current) => busy
+      ? current.includes(blockId) ? current : [...current, blockId]
+      : current.filter((id) => id !== blockId));
+  }, []);
 
   const clearSelection = () => {
     setSelectedBlockIds([]);
@@ -126,16 +137,44 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
     onChange(blocks.map((block) => (block.id === id ? { ...block, ...update } : block)));
   };
 
+  const removeMeetingBlocks = async (removedBlocks: ContentBlock[], commit: () => void) => {
+    const meetingIds = removedBlocks.filter((block) => block.type === "meeting").map((block) => block.id);
+    if (meetingIds.some((id) => busyMeetingIds.includes(id))) {
+      window.alert("Encerre ou aguarde o salvamento da gravação antes de excluir este bloco.");
+      return;
+    }
+
+    let recordedCount = 0;
+    try {
+      const recordings = await Promise.all(meetingIds.map((id) => listMeetingAudioSegments(id)));
+      recordedCount = recordings.reduce((total, items) => total + items.length, 0);
+    } catch (error) {
+      window.alert(error instanceof Error ? `Não foi possível verificar os áudios salvos: ${error.message}` : "Não foi possível verificar os áudios salvos.");
+      return;
+    }
+
+    if (recordedCount > 0 && !window.confirm(`Excluir também ${recordedCount} ${recordedCount === 1 ? "trecho de áudio" : "trechos de áudio"} salvo(s) neste navegador? Exporte os arquivos antes, se quiser mantê-los.`)) return;
+    if (recordedCount > 0) {
+      try {
+        await Promise.all(meetingIds.map((id) => deleteMeetingAudioForBlock(id)));
+      } catch (error) {
+        window.alert(error instanceof Error ? `Não foi possível excluir os áudios: ${error.message}` : "Não foi possível excluir os áudios.");
+        return;
+      }
+    }
+    commit();
+  };
+
   const focusBlock = (id: string, cursor?: number) => {
     requestAnimationFrame(() => {
-      const input = document.querySelector<HTMLTextAreaElement>(`[data-block-id="${id}"]`);
+      const input = document.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[data-block-id="${id}"]`);
       input?.focus();
       if (cursor !== undefined) input?.setSelectionRange(cursor, cursor);
     });
   };
 
   const applyCommand = (blockId: string, command: BlockCommand) => {
-    updateBlock(blockId, { type: command.type, text: "", checked: false });
+    updateBlock(blockId, { type: command.type, text: "", checked: false, meeting: command.type === "meeting" ? createEmptyMeetingData() : undefined });
     setSlashBlockId(null);
     setSlashIndex(0);
     setMenuBlockId(null);
@@ -143,7 +182,7 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
   };
 
   const insertAfter = (index: number, text = "", type: BlockType = "paragraph") => {
-    const block: ContentBlock = { id: makeId("block"), type, text, checked: false };
+    const block: ContentBlock = { id: makeId("block"), type, text, checked: false, meeting: type === "meeting" ? createEmptyMeetingData() : undefined };
     const next = [...blocks];
     next.splice(index + 1, 0, block);
     onChange(next);
@@ -152,6 +191,15 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
   };
 
   const deleteBlock = (index: number) => {
+    const removedBlock = blocks[index];
+    if (removedBlock.type === "meeting") {
+      void removeMeetingBlocks([removedBlock], () => {
+        if (blocks.length === 1) updateBlock(removedBlock.id, { type: "paragraph", text: "", checked: false, meeting: undefined });
+        else onChange(blocks.filter((_, itemIndex) => itemIndex !== index));
+        setMenuBlockId(null);
+      });
+      return;
+    }
     if (blocks.length === 1) {
       updateBlock(blocks[0].id, { type: "paragraph", text: "", checked: false });
       setMenuBlockId(null);
@@ -247,12 +295,14 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
     const selected = getSelectedBlocks();
     if (!selected.length) return;
     const firstSelectedIndex = blocks.findIndex((block) => selectedBlockSet.has(block.id));
-    let next = blocks.filter((block) => !selectedBlockSet.has(block.id));
-    if (!next.length) next = [{ id: makeId("block"), type: "paragraph", text: "" }];
-    onChange(next);
-    clearSelection();
-    setMenuBlockId(null);
-    focusBlock(next[Math.min(firstSelectedIndex, next.length - 1)].id, 0);
+    void removeMeetingBlocks(selected, () => {
+      let next = blocks.filter((block) => !selectedBlockSet.has(block.id));
+      if (!next.length) next = [{ id: makeId("block"), type: "paragraph", text: "" }];
+      onChange(next);
+      clearSelection();
+      setMenuBlockId(null);
+      focusBlock(next[Math.min(firstSelectedIndex, next.length - 1)].id, 0);
+    });
   };
 
   const moveSelection = (step: -1 | 1) => {
@@ -404,7 +454,13 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
               )}
             </div>
 
-            {block.type === "divider" ? (
+            {block.type === "meeting" ? (
+              <MeetingNotesBlock
+                block={block}
+                onChange={(update) => updateBlock(block.id, update)}
+                onRecorderBusyChange={handleRecorderBusyChange}
+              />
+            ) : block.type === "divider" ? (
               <button className="divider-block" type="button" aria-label="Divisor. Pressione Enter para adicionar um bloco abaixo." onClick={() => insertAfter(index)}><span /></button>
             ) : (
               <div className="block-content-wrap">
