@@ -33,7 +33,8 @@ export type DatabasePropertyType =
   | "Phone"
   | "Person"
   | "Relation"
-  | "Rollup";
+  | "Rollup"
+  | "Formula";
 
 export type RollupFunction =
   | "Show original"
@@ -122,6 +123,7 @@ export interface DatabaseProperty {
   rollupRelationPropertyId?: string;
   rollupTargetPropertyId?: string;
   rollupFunction?: RollupFunction;
+  formulaExpression?: string;
 }
 
 export interface DatabaseRow {

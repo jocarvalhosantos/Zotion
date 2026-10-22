@@ -22,6 +22,8 @@ import {
 } from "lucide-react";
 import { PRIORITY_OPTIONS, STATUS_OPTIONS, createDefaultDatabaseView, makeId } from "./model";
 import type { DatabaseFilterGroup, DatabaseFilterNode, DatabaseFilterOperator, DatabaseFilterRule, DatabaseProperty, DatabasePropertyType, DatabasePropertyValue, DatabaseRow, DatabaseSortRule, DatabaseViewLayout, DatabaseViewSettings, Page, Priority, RollupFunction, TaskStatus } from "./model";
+import { evaluateFormula, formatFormulaValue, validateFormula } from "./formulas";
+import type { FormulaEvaluation, FormulaValue } from "./formulas";
 
 type ViewKind = DatabaseViewLayout;
 type ChartStyle = "Bar" | "Donut";
@@ -32,7 +34,7 @@ const PRIORITY_LABELS: Record<Priority, string> = { Low: "Baixa", Medium: "Médi
 const VIEW_LABELS: Record<ViewKind, string> = { Table: "Tabela", Board: "Quadro", List: "Lista", Calendar: "Calendário", Gallery: "Galeria", Timeline: "Linha do tempo", Chart: "Gráfico", Form: "Formulário" };
 const DEFAULT_DATABASE_VIEW = createDefaultDatabaseView();
 const VIEW_LAYOUTS: ViewKind[] = ["Table", "Board", "List", "Calendar", "Gallery", "Timeline", "Chart", "Form"];
-const PROPERTY_TYPES: DatabasePropertyType[] = ["Text", "Number", "Select", "Multi-select", "Date", "Checkbox", "URL", "Email", "Phone", "Person", "Relation", "Rollup"];
+const PROPERTY_TYPES: DatabasePropertyType[] = ["Text", "Number", "Select", "Multi-select", "Date", "Checkbox", "URL", "Email", "Phone", "Person", "Relation", "Rollup", "Formula"];
 const PROPERTY_TYPE_LABELS: Record<DatabasePropertyType, string> = {
   Text: "Texto",
   Number: "Número",
@@ -46,6 +48,7 @@ const PROPERTY_TYPE_LABELS: Record<DatabasePropertyType, string> = {
   Person: "Pessoa",
   Relation: "Relação",
   Rollup: "Rollup",
+  Formula: "Fórmula",
 };
 const ROLLUP_FUNCTION_LABELS: Record<RollupFunction, string> = {
   "Show original": "Mostrar original",
@@ -142,6 +145,7 @@ function isNumericProperty(property: DatabaseProperty): boolean {
 
 function getFilterOperators(property: DatabaseProperty): DatabaseFilterOperator[] {
   const emptyOperators: DatabaseFilterOperator[] = ["is-empty", "is-not-empty"];
+  if (property.type === "Formula") return ["is", "is-not", "contains", "does-not-contain", "greater-than", "less-than", "on-or-before", "on-or-after", ...emptyOperators];
   if (isNumericProperty(property)) {
     return ["is", "is-not", "greater-than", "less-than", ...emptyOperators];
   }
@@ -238,6 +242,8 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
   const [propertyName, setPropertyName] = useState("");
   const [propertyType, setPropertyType] = useState<DatabasePropertyType>("Text");
   const [propertyOptions, setPropertyOptions] = useState("");
+  const [formulaExpression, setFormulaExpression] = useState("");
+  const [propertyError, setPropertyError] = useState("");
   const [relationDatabaseId, setRelationDatabaseId] = useState("");
   const [rollupRelationPropertyId, setRollupRelationPropertyId] = useState("");
   const [rollupTargetPropertyId, setRollupTargetPropertyId] = useState("title");
@@ -245,7 +251,7 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
   const rows = page.rows ?? [];
   const properties = page.databaseProperties ?? [];
   const filterProperties = [...BUILTIN_DATABASE_PROPERTIES, ...properties];
-  const formFields = filterProperties.filter((property) => property.type !== "Rollup");
+  const formFields = filterProperties.filter((property) => property.type !== "Rollup" && property.type !== "Formula");
 
   const getFormQuestion = (propertyId: string) => {
     const storedQuestion = activeView.formQuestions?.[propertyId];
@@ -270,7 +276,7 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
   const rollupTargetPage = allPages.find((candidate) => candidate.id === selectedRollupRelationProperty?.relationDatabaseId);
   const rollupTargetProperties = [
     ...BUILTIN_DATABASE_PROPERTIES,
-    ...(rollupTargetPage?.databaseProperties ?? []).filter((property) => property.type !== "Relation" && property.type !== "Rollup"),
+    ...(rollupTargetPage?.databaseProperties ?? []).filter((property) => property.type !== "Relation" && property.type !== "Rollup" && property.type !== "Formula"),
   ];
   const selectedRollupTargetPropertyId = rollupTargetProperties.some((property) => property.id === rollupTargetPropertyId)
     ? rollupTargetPropertyId
@@ -298,7 +304,7 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
 
     const targetProperty = [
       ...BUILTIN_DATABASE_PROPERTIES,
-      ...(targetPage.databaseProperties ?? []).filter((candidate) => candidate.type !== "Relation" && candidate.type !== "Rollup"),
+      ...(targetPage.databaseProperties ?? []).filter((candidate) => candidate.type !== "Relation" && candidate.type !== "Rollup" && candidate.type !== "Formula"),
     ].find((candidate) => candidate.id === property.rollupTargetPropertyId);
     if (!targetProperty) return "";
     const values = linkedRows.map((linkedRow) => getRowPropertyValue(linkedRow, targetProperty.id));
@@ -340,6 +346,45 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
     return "";
   };
 
+  const calculateFormula = (row: DatabaseRow, property: DatabaseProperty, stack: string[] = []): FormulaEvaluation => {
+    if (stack.includes(property.id)) return { error: "Dependência circular entre fórmulas." };
+    if (!property.formulaExpression?.trim()) return { value: null };
+    const nextStack = [...stack, property.id];
+    return evaluateFormula(property.formulaExpression, (name): FormulaValue => {
+      const target = filterProperties.find((candidate) => candidate.name.toLocaleLowerCase("pt-BR") === name.trim().toLocaleLowerCase("pt-BR"));
+      if (!target) throw new Error(`A propriedade “${name}” não existe nesta base.`);
+      if (target.type === "Formula") {
+        const result = calculateFormula(row, target, nextStack);
+        if ("error" in result) throw new Error(result.error);
+        return result.value;
+      }
+      if (target.type === "Rollup") {
+        const value = calculateRollup(row, target);
+        if (ROLLUP_NUMERIC_FUNCTIONS.includes(target.rollupFunction ?? "Count all")) {
+          const number = parseLocaleNumber(value);
+          return Number.isNaN(number) ? null : number;
+        }
+        return value;
+      }
+      return getRowPropertyValue(row, target.id);
+    });
+  };
+
+  const formulaToDatabaseValue = (value: FormulaValue): DatabasePropertyValue => {
+    if (Array.isArray(value)) {
+      const flattened: FormulaValue[] = [];
+      const addValues = (items: FormulaValue[]) => {
+        for (const item of items) {
+          if (Array.isArray(item)) addValues(item);
+          else flattened.push(item);
+        }
+      };
+      addValues(value);
+      return flattened.map((item) => formatFormulaValue(item));
+    }
+    return value;
+  };
+
   const propertyDisplayText = (row: DatabaseRow, property: DatabaseProperty): string => {
     const value = row.properties?.[property.id] ?? null;
     if (property.type === "Relation") {
@@ -348,11 +393,19 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
       return ids.map((id) => targetPage?.rows?.find((targetRow) => targetRow.id === id)?.title ?? "").filter(Boolean).join(", ");
     }
     if (property.type === "Rollup") return calculateRollup(row, property);
+    if (property.type === "Formula") {
+      const result = calculateFormula(row, property);
+      return "error" in result ? `Erro: ${result.error}` : formatFormulaValue(result.value);
+    }
     return propertyValueText(value, property.type);
   };
 
   const getFilterValue = (row: DatabaseRow, property: DatabaseProperty): DatabasePropertyValue => {
     if (property.type === "Relation" || property.type === "Rollup") return propertyDisplayText(row, property);
+    if (property.type === "Formula") {
+      const result = calculateFormula(row, property);
+      return "error" in result ? `Erro: ${result.error}` : formulaToDatabaseValue(result.value);
+    }
     return getRowPropertyValue(row, property.id);
   };
 
@@ -365,7 +418,7 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
     if (filter.operator === "is-not-empty") return !empty;
     if (empty) return false;
 
-    if (isNumericProperty(property)) {
+    if (isNumericProperty(property) || (property.type === "Formula" && typeof rawValue === "number")) {
       const actual = parseLocaleNumber(typeof rawValue === "number" ? rawValue : String(rawValue));
       const expected = Number(filter.value);
       if (Number.isNaN(actual) || Number.isNaN(expected)) return false;
@@ -397,6 +450,13 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
         ? rawValue.some((item) => normalize(item) === expected)
         : normalize(String(rawValue)) === expected;
       return filter.operator === "is" ? found : !found;
+    }
+    if (property.type === "Formula" && typeof rawValue === "string") {
+      const comparison = rawValue.localeCompare(filter.value, "pt-BR", { numeric: true });
+      if (filter.operator === "greater-than") return comparison > 0;
+      if (filter.operator === "less-than") return comparison < 0;
+      if (filter.operator === "on-or-before") return comparison <= 0;
+      if (filter.operator === "on-or-after") return comparison >= 0;
     }
     if (property.type === "Date" && (filter.operator === "on-or-before" || filter.operator === "on-or-after")) {
       const actual = String(rawValue);
@@ -681,10 +741,18 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
 
   const createProperty = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setPropertyError("");
     const name = propertyName.trim();
     if (!name) return;
     if (propertyType === "Relation" && !allPages.some((candidate) => candidate.id === relationDatabaseId && candidate.kind === "database")) return;
     if (propertyType === "Rollup" && (!selectedRollupRelationProperty || !selectedRollupTargetProperty)) return;
+    if (propertyType === "Formula") {
+      const validationError = validateFormula(formulaExpression, filterProperties.map((property) => property.name));
+      if (validationError) {
+        setPropertyError(validationError);
+        return;
+      }
+    }
     const options = propertyOptions.split(",").map((option) => option.trim()).filter(Boolean);
     const property: DatabaseProperty = {
       id: makeId("property"),
@@ -699,10 +767,13 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
         rollupTargetPropertyId: selectedRollupTargetPropertyId,
         rollupFunction: selectedRollupFunction,
       } : {}),
+      ...(propertyType === "Formula" ? { formulaExpression: formulaExpression.trim() } : {}),
     };
     onUpdateProperties([...properties, property]);
     setPropertyName("");
     setPropertyOptions("");
+    setFormulaExpression("");
+    setPropertyError("");
   };
 
   const updateProperty = (id: string, update: Partial<DatabaseProperty>) => {
@@ -754,6 +825,10 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
     if (property.type === "Rollup") {
       const text = propertyDisplayText(row, property);
       return <span className="rollup-value" title={`${property.name}: ${text}`}>{text || "—"}</span>;
+    }
+    if (property.type === "Formula") {
+      const text = propertyDisplayText(row, property);
+      return <span className={`rollup-value ${text.startsWith("Erro:") ? "formula-error" : ""}`} title={`${property.name}: ${text}`}>{text || "—"}</span>;
     }
     if (property.type === "Checkbox") return <input className="property-checkbox" type="checkbox" checked={value === true} onChange={(event) => updatePropertyValue(row, property, event.target.checked)} aria-label={ariaLabel} />;
     if (property.type === "Number") return <input className="cell-text" type="number" value={typeof value === "number" ? value : ""} onChange={(event) => updatePropertyValue(row, property, event.target.value === "" ? null : Number(event.target.value))} aria-label={ariaLabel} placeholder="Número" />;
@@ -836,7 +911,7 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
       return typeof value === "string" ? value : "";
     };
     const rowProperties = Object.fromEntries(properties
-      .filter((property) => property.type !== "Rollup")
+      .filter((property) => property.type !== "Rollup" && property.type !== "Formula")
       .map((property) => [property.id, formValues[property.id] ?? (property.type === "Checkbox" ? false : property.type === "Multi-select" || property.type === "Relation" ? [] : null)]));
     const newRow: DatabaseRow = {
       id: makeId("row"),
@@ -1041,6 +1116,8 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
               <form className="database-property-form" onSubmit={createProperty}>
                 <label>Nome<input value={propertyName} onChange={(event) => setPropertyName(event.target.value)} placeholder="Ex.: Orçamento" aria-label="Nome da propriedade" /></label>
                 <label>Tipo<select value={propertyType} onChange={(event) => setPropertyType(event.target.value as DatabasePropertyType)} aria-label="Tipo da propriedade">{PROPERTY_TYPES.map((type) => <option key={type} value={type}>{PROPERTY_TYPE_LABELS[type]}</option>)}</select></label>
+                {propertyType === "Formula" && <label>Expressão<textarea value={formulaExpression} onChange={(event) => { setFormulaExpression(event.target.value); setPropertyError(""); }} placeholder={'prop("Estimativa") * 1.1'} aria-label="Expressão da fórmula" rows={3} /><small>Use prop("Nome") para consultar um campo; há funções de texto, matemática e datas.</small></label>}
+                {propertyError && <p className="database-property-error" role="alert">{propertyError}</p>}
                 {(propertyType === "Select" || propertyType === "Multi-select") && <label>Opções<input value={propertyOptions} onChange={(event) => setPropertyOptions(event.target.value)} placeholder="Alto, Médio, Baixo" aria-label="Opções separadas por vírgula" /></label>}
                 {propertyType === "Relation" && <label>Base relacionada<select value={relationDatabaseId} onChange={(event) => setRelationDatabaseId(event.target.value)} aria-label="Base relacionada"><option value="">Escolher base</option>{allPages.filter((candidate) => candidate.kind === "database").map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.title}</option>)}</select></label>}
                 {propertyType === "Rollup" && (rollupRelationProperties.length === 0
@@ -1058,6 +1135,7 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
                   <input value={property.name} onChange={(event) => updateProperty(property.id, { name: event.target.value })} aria-label={`Renomear ${property.name}`} />
                   <small>{PROPERTY_TYPE_LABELS[property.type]}</small>
                   <button type="button" title={`Excluir propriedade ${property.name}`} aria-label={`Excluir propriedade ${property.name}`} onClick={() => removeProperty(property.id)}><Trash2 size={14} /></button>
+                  {property.type === "Formula" && <textarea className="database-property-formula-editor" value={property.formulaExpression ?? ""} onChange={(event) => updateProperty(property.id, { formulaExpression: event.target.value })} aria-label={`Expressão da fórmula ${property.name}`} placeholder={'prop("Prioridade") == "High"'} rows={2} />}
                 </div>)}
               </div>
             </div>}
