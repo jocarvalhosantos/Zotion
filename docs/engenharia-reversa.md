@@ -66,9 +66,15 @@ O traço em ambas as direções alcançou 2.523 nós por causa de relações de 
 | API de clipboard do preload | Respondida parcialmente | Dois caminhos estáticos candidatos para escrita de texto/imagem; chamador, payload rico e colagem em runtime continuam desconhecidos. |
 | API exposta pelo preload | Respondida parcialmente | `__electronApi` lista 232 membros, incluindo navegação por bloco, abas, busca rápida, SQLite e reuniões; o status da API é dinâmico e os membros não foram confirmados em execução. |
 | Processo principal e IPC | Respondida parcialmente | Um canal literal tem transmissão e listener pareados; sete operações têm canal dinâmico e o grafo semântico tem incógnitas. |
+| Serviço SQLite do desktop | Respondida parcialmente | Evidence `ev_aaec5886b5fb14bfc6e3ef3cfb80f7c425d3849fe2d8c8dfdbcf1d01555a7a0f` cobre `.webpack/main/SqliteServer.js` e uma referência a `better-sqlite3`; o esquema e a finalidade dos dados não foram estabelecidos. O addon nativo com metadados de integridade contraditórios não sustenta conclusões. |
+| Interface visual | Respondida parcialmente | Uma captura da janela aberta mostrou navegação lateral, busca, ações de página e áreas de conteúdo; é uma observação de uma tela, sem verificar os fluxos desses controles. |
 | Fluxos de páginas, blocos e bases de dados do produto | Não respondida pelo binário selecionado | A aplicação implementa um subconjunto guiado pela documentação pública; não houve análise focada dos módulos de interface web que implementam esses fluxos. |
 | Sincronização, API online, permissões e colaboração | Não respondida | A inspeção estática do desktop não estabelece protocolos de backend nem semântica de conta. |
-| Comportamento em execução | Não respondida | Nenhum cenário Electron/browser foi capturado nesta etapa. |
+| Resposta dos controles em execução | Não respondida | A captura visual confirma apenas uma tela renderizada; nenhum clique ou fluxo foi observado. |
+
+### Observação visual complementar
+
+Separada das evidências REA, a leitura visual da janela desktop aberta mostrou um padrão de navegação com busca global, página inicial, notificações e páginas na barra lateral. A página visível tinha ações de compartilhar, copiar link, favoritar e abrir menu, além de controles de capa e comentários acima do conteúdo. Isso orienta a composição da interface web independente, mas não confirma comportamento interno ou paridade com outras páginas e configurações.
 
 ## Modelo de produto adotado
 
