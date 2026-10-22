@@ -84,6 +84,8 @@ Nesse bundle, o REA reteve referências a `rollupPropertySchema`, `rollup_type`,
 
 Na mesma passada focada, procurei caminhos de filtros e vistas. O relatório preservou nomes candidatos como `filters`, `sort`, `viewId`, `propertyFilters`, `combinatorFilter`, `filterValue`, `subfilter` e `subfilterType`. Um trecho minificado percorre `propertyFilters` com `combinatorFilter`, e outro consulta `subfilter` durante avaliação. O grafo REA mantém receptores e várias relações como desconhecidos; esses nomes e trechos não estabelecem o esquema persistido completo, precedência entre grupos ou o comportamento em execução. Usei-os somente como pistas para ampliar o modelo local com grupos de condições AND/OR, sem alegar equivalência interna.
 
+A documentação pública atual do Notion descreve filtros avançados com até três níveis de grupos AND/OR e múltiplas ordenações cuja sequência pode ser reordenada. A reconstrução agora permite grupos de filtros até três níveis e várias ordenações sequenciais por visualização. Essa correspondência segue a documentação e serve à funcionalidade independente; o REA não confirmou que esses mesmos nomes ou estruturas sejam os usados internamente pelo produto.
+
 O Chrome do usuário estava aberto no Notion, mas não expunha um endpoint local CDP em `9222` ou `9223`; por isso, o REA CLI não conseguiu capturar os scripts da página autenticada. Não tentei abrir outra sessão de depuração nem reutilizar cookies. A observação da árvore de acessibilidade da página autenticada segue limitada aos controles visíveis descritos abaixo; não houve captura de rede nem execução de cenários.
 
 ## Cobertura nesta etapa
@@ -136,9 +138,9 @@ flowchart LR
 
 ## Escopo implementado e lacunas
 
-Implementado nesta versão: navegação hierárquica, favoritos, edição e cópia/colagem de blocos, comandos `/` e atalhos Markdown para blocos, tarefas com checkbox, bases com sete vistas (incluindo gráficos locais de barras e rosca), propriedades personalizáveis de tipos básicos, relações locais de uma via, rollups calculados entre bases, busca local, vistas nomeadas com layout, filtros AND/OR com grupos aninháveis até três níveis e uma ordenação por vista, tema claro/escuro e backup JSON.
+Implementado nesta versão: navegação hierárquica, favoritos, edição e cópia/colagem de blocos, comandos `/` e atalhos Markdown para blocos, tarefas com checkbox, bases com sete vistas (incluindo gráficos locais de barras e rosca), propriedades personalizáveis de tipos básicos, relações locais de uma via, rollups calculados entre bases, busca local, vistas nomeadas com layout, filtros AND/OR com grupos aninháveis até três níveis, várias ordenações sequenciais por vista, tema claro/escuro e backup JSON.
 
-Fora do escopo: seleção/cópia estruturada de vários blocos, persistência do clipboard estruturado entre sessões, login, sincronização, colaboração em tempo real, permissões, comentários, integrações, API do Notion, anexos, propriedades automáticas, fórmulas, relações inversas, profundidade de grupos de filtro sem limite, várias ordenações simultâneas, gráficos de linha, formulários e paridade visual/comportamental completa. Não há serviço de backend; perfis de navegador não compartilham dados.
+Fora do escopo: seleção/cópia estruturada de vários blocos, persistência do clipboard estruturado entre sessões, login, sincronização, colaboração em tempo real, permissões, comentários, integrações, API do Notion, anexos, propriedades automáticas, fórmulas, relações inversas, agrupamentos de dados, reordenação manual das opções de seleção depois de criadas, mapas, formulários, feeds, dashboards, gráficos de linha e paridade visual/comportamental completa. Não há serviço de backend; perfis de navegador não compartilham dados.
 
 ## Referências
 
@@ -146,6 +148,9 @@ Fora do escopo: seleção/cópia estruturada de vários blocos, persistência do
 - [Estudo de caso REA do Notion Desktop](https://rea.tools/showcase/notion/)
 - [Noções básicas de escrita e edição no Notion](https://www.notion.com/help/writing-and-editing-basics)
 - [Vistas, filtros e ordenação no Notion](https://www.notion.com/en-gb/help/views-filters-and-sorts)
+- [Formulários no Notion](https://www.notion.com/help/forms)
+- [Feed view no Notion](https://www.notion.com/en-gb/help/feeds)
+- [Map view no Notion](https://www.notion.com/en-gb/help/maps)
 - [Propriedades de bases de dados no Notion](https://www.notion.com/help/database-properties)
 - [Relações e rollups no Notion](https://www.notion.com/help/relations-and-rollups)
 - [Busca no Notion](https://www.notion.com/en-gb/help/search)

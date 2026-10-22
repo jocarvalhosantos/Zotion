@@ -4,8 +4,10 @@ import {
   ArrowDownWideNarrow,
   BarChart3,
   CalendarDays,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Filter,
   GanttChart,
   LayoutGrid,
@@ -18,7 +20,7 @@ import {
   Columns3,
 } from "lucide-react";
 import { PRIORITY_OPTIONS, STATUS_OPTIONS, createDefaultDatabaseView, makeId } from "./model";
-import type { DatabaseFilterGroup, DatabaseFilterNode, DatabaseFilterOperator, DatabaseFilterRule, DatabaseProperty, DatabasePropertyType, DatabasePropertyValue, DatabaseRow, DatabaseViewLayout, DatabaseViewSettings, Page, Priority, RollupFunction, TaskStatus } from "./model";
+import type { DatabaseFilterGroup, DatabaseFilterNode, DatabaseFilterOperator, DatabaseFilterRule, DatabaseProperty, DatabasePropertyType, DatabasePropertyValue, DatabaseRow, DatabaseSortRule, DatabaseViewLayout, DatabaseViewSettings, Page, Priority, RollupFunction, TaskStatus } from "./model";
 
 type ViewKind = DatabaseViewLayout;
 type ChartStyle = "Bar" | "Donut";
@@ -200,12 +202,19 @@ function getCalendarMonth(date: Date, amount: number): Date {
 export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties, onUpdateViews, onUpdateActiveViewId }: DatabaseViewProps) {
   const databaseViews = useMemo(() => {
     const storedViews = page.databaseViews?.length ? page.databaseViews : [DEFAULT_DATABASE_VIEW];
-    return storedViews.map((storedView) => ({ ...DEFAULT_DATABASE_VIEW, ...storedView, filters: storedView.filters ?? [], filterGroups: storedView.filterGroups ?? [] }));
+    return storedViews.map((storedView) => ({
+      ...DEFAULT_DATABASE_VIEW,
+      ...storedView,
+      filters: storedView.filters ?? [],
+      filterGroups: storedView.filterGroups ?? [],
+      sorts: storedView.sorts ?? (storedView.sortPropertyId ? [{ id: "legacy-sort", propertyId: storedView.sortPropertyId, direction: storedView.sortDirection }] : []),
+    }));
   }, [page.databaseViews]);
   const activeViewId = databaseViews.some((candidate) => candidate.id === page.activeDatabaseViewId)
     ? page.activeDatabaseViewId!
     : databaseViews[0].id;
   const activeView = databaseViews.find((candidate) => candidate.id === activeViewId) ?? databaseViews[0];
+  const activeViewSorts = activeView.sorts ?? [];
   const view = activeView.layout;
   const [query, setQuery] = useState("");
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
@@ -407,29 +416,75 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
       const matchesFilters = matches.length === 0 || (activeView.filterMatch === "OR" ? matches.some(Boolean) : matches.every(Boolean));
       return matchesText && matchesFilters;
     });
-    const sortProperty = filterProperties.find((property) => property.id === activeView.sortPropertyId);
-    if (sortProperty) {
-      result.sort((a, b) => {
+    if (activeViewSorts.length > 0) result.sort((a, b) => {
+      for (const sort of activeViewSorts) {
+        const sortProperty = filterProperties.find((property) => property.id === sort.propertyId);
+        if (!sortProperty) continue;
         const aValue = getFilterValue(a, sortProperty);
         const bValue = getFilterValue(b, sortProperty);
         const aEmpty = isEmptyPropertyValue(aValue);
         const bEmpty = isEmptyPropertyValue(bValue);
         if (aEmpty !== bEmpty) return aEmpty ? 1 : -1;
         let order = 0;
-        if (isNumericProperty(sortProperty)) {
+        if (sortProperty.type === "Select" || sortProperty.type === "Multi-select") {
+          const optionOrder = sortProperty.id === "status" ? STATUS_OPTIONS : sortProperty.id === "priority" ? PRIORITY_OPTIONS : sortProperty.options ?? [];
+          const optionRanks = (value: DatabasePropertyValue) => (Array.isArray(value) ? value : value === null ? [] : [String(value)])
+            .map((option) => {
+              const rank = optionOrder.indexOf(option);
+              return rank < 0 ? optionOrder.length : rank;
+            })
+            .sort((left, right) => left - right);
+          const aRanks = optionRanks(aValue);
+          const bRanks = optionRanks(bValue);
+          for (let rankIndex = 0; rankIndex < Math.max(aRanks.length, bRanks.length); rankIndex += 1) {
+            const aRank = aRanks[rankIndex] ?? Number.POSITIVE_INFINITY;
+            const bRank = bRanks[rankIndex] ?? Number.POSITIVE_INFINITY;
+            if (aRank !== bRank) {
+              order = aRank - bRank;
+              break;
+            }
+          }
+        } else if (isNumericProperty(sortProperty)) {
           order = parseLocaleNumber(typeof aValue === "number" ? aValue : String(aValue)) - parseLocaleNumber(typeof bValue === "number" ? bValue : String(bValue));
           if (!Number.isFinite(order)) order = 0;
         } else {
           order = String(aValue).localeCompare(String(bValue), "pt-BR", { numeric: true, sensitivity: "base" });
         }
-        return activeView.sortDirection === "Descending" ? -order : order;
-      });
-    }
+        if (order !== 0) return sort.direction === "Descending" ? -order : order;
+      }
+      return 0;
+    });
     return result;
   }, [rows, query, activeView, properties, allPages, filterProperties]);
 
   const updateActiveView = (update: Partial<DatabaseViewSettings>) => {
     onUpdateViews(databaseViews.map((candidate) => candidate.id === activeView.id ? { ...candidate, ...update } : candidate));
+  };
+
+  const updateSorts = (sorts: DatabaseSortRule[]) => updateActiveView({
+    sorts,
+    sortPropertyId: sorts[0]?.propertyId ?? "",
+    sortDirection: sorts[0]?.direction ?? "Ascending",
+  });
+
+  const addSort = () => {
+    const property = filterProperties.find((candidate) => !activeViewSorts.some((sort) => sort.propertyId === candidate.id));
+    if (!property) return;
+    updateSorts([...activeViewSorts, { id: makeId("sort"), propertyId: property.id, direction: "Ascending" }]);
+  };
+
+  const updateSort = (id: string, update: Partial<DatabaseSortRule>) => {
+    updateSorts(activeViewSorts.map((sort) => sort.id === id ? { ...sort, ...update } : sort));
+  };
+
+  const removeSort = (id: string) => updateSorts(activeViewSorts.filter((sort) => sort.id !== id));
+
+  const moveSort = (index: number, offset: -1 | 1) => {
+    const nextIndex = index + offset;
+    if (nextIndex < 0 || nextIndex >= activeViewSorts.length) return;
+    const sorts = [...activeViewSorts];
+    [sorts[index], sorts[nextIndex]] = [sorts[nextIndex], sorts[index]];
+    updateSorts(sorts);
   };
 
   const updateFilter = (id: string, update: Partial<DatabaseFilterRule>) => {
@@ -489,6 +544,7 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
       filters: [],
       filterGroups: [],
       filterMatch: "AND",
+      sorts: [],
       sortPropertyId: "",
       sortDirection: "Ascending",
     };
@@ -602,7 +658,9 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
       ...viewSettings,
       filters: viewSettings.filters.filter((filter) => !removedPropertyIds.has(filter.propertyId)),
       filterGroups: removePropertyFilters(viewSettings.filterGroups ?? [], removedPropertyIds) as DatabaseFilterGroup[],
-      sortPropertyId: removedPropertyIds.has(viewSettings.sortPropertyId) ? "" : viewSettings.sortPropertyId,
+      sorts: (viewSettings.sorts ?? []).filter((sort) => !removedPropertyIds.has(sort.propertyId)),
+      sortPropertyId: (viewSettings.sorts ?? []).find((sort) => !removedPropertyIds.has(sort.propertyId))?.propertyId ?? "",
+      sortDirection: (viewSettings.sorts ?? []).find((sort) => !removedPropertyIds.has(sort.propertyId))?.direction ?? "Ascending",
     })));
     onUpdateRows(rows.map((row) => {
       const next = { ...(row.properties ?? {}) };
@@ -766,13 +824,25 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
             </div>}
           </div>
           <div className="database-popover-wrap">
-            <button className={`icon-button database-sort ${sortOpen || activeView.sortPropertyId ? "selected" : ""}`} type="button" title="Ordenar esta visualização" aria-expanded={sortOpen} onClick={() => { setSortOpen((open) => !open); setFilterOpen(false); setViewSettingsOpen(false); }}>
-              <ArrowDownWideNarrow size={16} /><span>Ordenar</span>
+            <button className={`icon-button database-sort ${sortOpen || activeViewSorts.length > 0 ? "selected" : ""}`} type="button" title="Ordenar esta visualização" aria-expanded={sortOpen} onClick={() => { setSortOpen((open) => !open); setFilterOpen(false); setViewSettingsOpen(false); }}>
+              <ArrowDownWideNarrow size={16} /><span>Ordenar{activeViewSorts.length ? ` · ${activeViewSorts.length}` : ""}</span>
             </button>
             {sortOpen && <div className="database-sort-popover" role="dialog" aria-label="Ordenação da visualização">
-              <div className="database-popover-heading"><strong>Ordenar</strong><span>Configuração desta visualização</span></div>
-              <label>Propriedade<select value={activeView.sortPropertyId} onChange={(event) => updateActiveView({ sortPropertyId: event.target.value })} aria-label="Propriedade da ordenação"><option value="">Sem ordenação</option>{filterProperties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}</select></label>
-              <label>Ordem<select value={activeView.sortDirection} onChange={(event) => updateActiveView({ sortDirection: event.target.value as "Ascending" | "Descending" })} aria-label="Direção da ordenação"><option value="Ascending">Crescente</option><option value="Descending">Decrescente</option></select></label>
+              <div className="database-popover-heading"><strong>Ordenar</strong><span>Critérios do primeiro ao último</span></div>
+              {activeViewSorts.length === 0 && <p className="database-sort-empty">Esta visualização ainda não tem ordenações.</p>}
+              <div className="database-sort-rules">
+                {activeViewSorts.map((sort, index) => <div className="database-sort-rule" key={sort.id}>
+                  <span className="database-sort-position">{index + 1}</span>
+                  <select value={sort.propertyId} onChange={(event) => updateSort(sort.id, { propertyId: event.target.value })} aria-label={`Propriedade da ordenação ${index + 1}`}>
+                    {filterProperties.map((property) => <option key={property.id} value={property.id} disabled={activeViewSorts.some((other) => other.id !== sort.id && other.propertyId === property.id)}>{property.name}</option>)}
+                  </select>
+                  <select value={sort.direction} onChange={(event) => updateSort(sort.id, { direction: event.target.value as "Ascending" | "Descending" })} aria-label={`Direção da ordenação ${index + 1}`}><option value="Ascending">Crescente</option><option value="Descending">Decrescente</option></select>
+                  <button type="button" aria-label={`Mover ordenação ${index + 1} para cima`} title="Mover para cima" disabled={index === 0} onClick={() => moveSort(index, -1)}><ChevronUp size={14} /></button>
+                  <button type="button" aria-label={`Mover ordenação ${index + 1} para baixo`} title="Mover para baixo" disabled={index === activeViewSorts.length - 1} onClick={() => moveSort(index, 1)}><ChevronDown size={14} /></button>
+                  <button type="button" className="database-filter-remove" aria-label={`Remover ordenação ${index + 1}`} title="Remover ordenação" onClick={() => removeSort(sort.id)}><Trash2 size={13} /></button>
+                </div>)}
+              </div>
+              <div className="database-popover-actions"><button type="button" onClick={addSort} disabled={activeViewSorts.length >= filterProperties.length}><Plus size={13} /> Adicionar ordenação</button><button type="button" onClick={() => updateSorts([])} disabled={activeViewSorts.length === 0}>Limpar</button></div>
             </div>}
           </div>
           <div className="database-popover-wrap">
@@ -997,7 +1067,7 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
           </div>
         )}
       </div>
-      <div className="database-footer"><span>{visibleRows.length} {visibleRows.length === 1 ? "página" : "páginas"}</span><span>·</span><button type="button" onClick={() => { setQuery(""); updateActiveView({ filters: [], filterGroups: [], filterMatch: "AND", sortPropertyId: "", sortDirection: "Ascending" }); }}>Limpar filtros e ordenação</button></div>
+      <div className="database-footer"><span>{visibleRows.length} {visibleRows.length === 1 ? "página" : "páginas"}</span><span>·</span><button type="button" onClick={() => { setQuery(""); updateActiveView({ filters: [], filterGroups: [], filterMatch: "AND", sorts: [], sortPropertyId: "", sortDirection: "Ascending" }); }}>Limpar filtros e ordenação</button></div>
     </section>
   );
 }

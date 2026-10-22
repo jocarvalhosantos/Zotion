@@ -161,6 +161,7 @@ function App() {
       id: makeId("view"),
       filters: (view.filters ?? []).map((filter) => ({ ...filter, id: makeId("filter") })),
       filterGroups: (view.filterGroups ?? []).map(duplicateFilterGroup),
+      sorts: (view.sorts ?? []).map((sort) => ({ ...sort, id: makeId("sort") })),
     }));
     const activeViewIndex = page.databaseViews?.findIndex((view) => view.id === page.activeDatabaseViewId) ?? -1;
     const duplicate: Page = {

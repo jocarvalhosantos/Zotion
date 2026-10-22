@@ -85,6 +85,12 @@ export interface DatabaseFilterGroup {
 
 export type DatabaseFilterNode = DatabaseFilterRule | DatabaseFilterGroup;
 
+export interface DatabaseSortRule {
+  id: string;
+  propertyId: string;
+  direction: "Ascending" | "Descending";
+}
+
 export interface DatabaseViewSettings {
   id: string;
   name: string;
@@ -92,6 +98,7 @@ export interface DatabaseViewSettings {
   filters: DatabaseFilterRule[];
   filterGroups?: DatabaseFilterGroup[];
   filterMatch: "AND" | "OR";
+  sorts?: DatabaseSortRule[];
   sortPropertyId: string;
   sortDirection: "Ascending" | "Descending";
 }
@@ -327,6 +334,7 @@ export function createDefaultDatabaseView(): DatabaseViewSettings {
     filters: [],
     filterGroups: [],
     filterMatch: "AND",
+    sorts: [],
     sortPropertyId: "",
     sortDirection: "Ascending",
   };

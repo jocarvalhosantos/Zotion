@@ -219,7 +219,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .database-view-create-popover, .database-filter-popover, .database-sort-popover, .database-view-settings-popover { position: absolute; top: 34px; right: 0; z-index: 35; display: grid; width: min(360px, calc(100vw - 32px)); padding: 14px; gap: 9px; border: 1px solid var(--border); border-radius: 9px; color: var(--text); background: var(--surface); box-shadow: var(--shadow); }
 .database-view-create-popover { width: min(280px, calc(100vw - 32px)); }
 .database-filter-popover { width: min(560px, calc(100vw - 32px)); }
-.database-sort-popover, .database-view-settings-popover { width: min(300px, calc(100vw - 32px)); }
+.database-sort-popover { width: min(380px, calc(100vw - 32px)); }
+.database-view-settings-popover { width: min(300px, calc(100vw - 32px)); }
 .database-view-create-popover > strong { color: var(--text); font-size: 12px; }
 .database-popover-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .database-popover-heading strong { color: var(--text); font-size: 12px; }
@@ -243,6 +244,14 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .database-filter-group-heading > button:disabled { color: var(--faint); cursor: default; }
 .database-filter-group-children { display: grid; gap: 7px; }
 .database-filter-group-empty { margin: 0; color: var(--muted); font-size: 9px; }
+.database-sort-rules { display: grid; max-height: 240px; gap: 6px; overflow-y: auto; }
+.database-sort-rule { display: grid; grid-template-columns: 18px minmax(0, 1.15fr) minmax(0, 1fr) 23px 23px 25px; align-items: center; gap: 4px; }
+.database-sort-position { color: var(--muted); font-size: 9px; text-align: center; }
+.database-sort-rule select { min-width: 0; width: 100%; height: 28px; padding: 0 5px; color: var(--text-soft); border: 1px solid var(--border); border-radius: 5px; outline: 0; background: var(--surface); font-size: 10px; }
+.database-sort-rule button { display: grid; width: 23px; height: 25px; place-items: center; color: var(--muted); border-radius: 4px; }
+.database-sort-rule button:hover:not(:disabled) { color: var(--text); background: var(--hover); }
+.database-sort-rule button:disabled { color: var(--faint); cursor: default; }
+.database-sort-empty { margin: 0; color: var(--muted); font-size: 10px; }
 .database-filter-rule { display: grid; grid-template-columns: minmax(92px, .9fr) minmax(115px, 1fr) minmax(90px, 1.1fr) 25px; align-items: center; gap: 5px; }
 .database-filter-rule input, .database-filter-rule select { min-width: 0; width: 100%; height: 28px; padding: 0 6px; color: var(--text-soft); border: 1px solid var(--border); border-radius: 5px; outline: 0; background: var(--surface); font-size: 10px; }
 .database-filter-remove { display: grid; width: 25px; height: 25px; place-items: center; color: var(--muted); border-radius: 4px; }
