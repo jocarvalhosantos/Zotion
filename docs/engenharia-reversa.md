@@ -58,6 +58,14 @@ Um traço estático do canal literal `electron-store-get-data` (Evidence `ev_fe5
 
 O traço em ambas as direções alcançou 2.523 nós por causa de relações de contenção no bundle. A conclusão acima usa apenas as duas arestas diretamente ligadas ao canal selecionado; os demais nós do traço não foram tratados como participantes desse fluxo. Isso ainda não mostra o valor lido pelo handler, persistência de páginas, sincronização remota nem comportamento em execução.
 
+## Fronteira do cliente web e carregamento de telas
+
+Fiz uma passada adicional do processo principal com o mesmo artefato, selecionando somente `.webpack/main/index.js` e elevando os limites semânticos para 50.000 nós e 40.000 por arquivo. O Evidence REA é `ev_96f1d1d4824142ea4eeb6dab14bed0abf69cf31e3d51d40facae2064ae1886bb`; a projeção de resumo é `ev_edcde5735f2a6ab3a585ee799a7e3386387f066462aa8529b638bd016b252c5a`. Foram analisados 966.691 nós AST, 1.796 módulos e 6.020 achados, sem falhas de parse. Ainda assim, 160 arquivos ficaram fora da seleção, o grafo semântico ficou parcial e truncado, e o relatório reteve 41.164 incógnitas semânticas. O limite maior expôs mais incógnitas; não converteu candidatos estáticos em comportamento confirmado.
+
+No código estático desse processo, a janela principal chama `webContents.loadURL(this.initialUrl)`. Outras rotas montam URLs usando `getInitialBaseUrl()`, incluindo `/quick-search`; há também carregamento de páginas internas de abas e placeholders por caminhos `file://`. A busca textual no mesmo arquivo encontrou URLs explícitas para serviços auxiliares, como `https://calendar.notion.so`, mas não resolveu o valor usado em `initialUrl` nem a origem retornada por `getInitialBaseUrl()`.
+
+O inventário do ASAR lista componentes internos para abas, configurações, atividade, SQLite e janelas. Em `.webpack/renderer/tab_browser_view`, o único arquivo listado é `preload.js`, sem um `index.js` de interface. Isso sugere que o conteúdo principal é entregue ao contêiner de navegação em tempo de execução, mas não prova qual origem, bundle web ou endpoint foi carregado. Sem uma captura de runtime da navegação e dos recursos da aplicação, a interface autenticada, os modelos de página e as chamadas ao backend continuam fora do que este pacote permite confirmar.
+
 ## Cobertura nesta etapa
 
 | Frente investigada | Estado | Evidência e limite |
@@ -66,6 +74,7 @@ O traço em ambas as direções alcançou 2.523 nós por causa de relações de 
 | API de clipboard do preload | Respondida parcialmente | Dois caminhos estáticos candidatos para escrita de texto/imagem; chamador, payload rico e colagem em runtime continuam desconhecidos. |
 | API exposta pelo preload | Respondida parcialmente | `__electronApi` lista 232 membros, incluindo navegação por bloco, abas, busca rápida, SQLite e reuniões; o status da API é dinâmico e os membros não foram confirmados em execução. |
 | Processo principal e IPC | Respondida parcialmente | Um canal literal tem transmissão e listener pareados; sete operações têm canal dinâmico e o grafo semântico tem incógnitas. |
+| Carregamento do conteúdo principal no desktop | Respondida parcialmente | `initialUrl` e `getInitialBaseUrl()` são usados para carregar conteúdo em `webContents`; a origem e os recursos carregados não foram resolvidos em runtime. Evidence `ev_96f1d1d4824142ea4eeb6dab14bed0abf69cf31e3d51d40facae2064ae1886bb`. |
 | Serviço SQLite do desktop | Respondida parcialmente | Evidence `ev_aaec5886b5fb14bfc6e3ef3cfb80f7c425d3849fe2d8c8dfdbcf1d01555a7a0f` cobre `.webpack/main/SqliteServer.js` e uma referência a `better-sqlite3`; o esquema e a finalidade dos dados não foram estabelecidos. O addon nativo com metadados de integridade contraditórios não sustenta conclusões. |
 | Interface visual | Respondida parcialmente | Uma captura da janela aberta mostrou navegação lateral, busca, ações de página e áreas de conteúdo; é uma observação de uma tela, sem verificar os fluxos desses controles. |
 | Fluxos de páginas, blocos e bases de dados do produto | Não respondida pelo binário selecionado | A aplicação implementa um subconjunto guiado pela documentação pública; não houve análise focada dos módulos de interface web que implementam esses fluxos. |
