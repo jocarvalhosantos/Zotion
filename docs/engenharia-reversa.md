@@ -48,6 +48,28 @@ O [estudo de caso público do REA sobre a área de transferência do Notion](htt
 
 A aplicação implementa seu próprio formato: copia o texto simples e uma representação HTML com um marcador `workspace-lab:<id>`, mantendo o bloco estruturado em memória na sessão atual. Ao colar a partir desse marcador na mesma sessão, restaura o tipo e o conteúdo do bloco; se a cópia vier de outro aplicativo, de outra sessão ou não tiver HTML, o navegador usa texto simples. O marcador e o formato não reutilizam IDs nem MIME types do Notion. Esta é uma decisão de implementação inspirada na evidência e não uma alegação de paridade.
 
+## Achado focado: processo principal e IPC
+
+Analisei o arquivo `.webpack/main/index.js` isoladamente, usando o mesmo `app.asar` e SHA-256. Evidence da análise: `ev_b4b769964d7bbfdf7575052b2cb0d4790ae5d3e4a28561e850d946c222061ef8`. O REA processou um arquivo selecionado, leu 4.411.723 bytes de texto, visitou 966.691 nós AST, reconheceu 1.796 módulos e registrou 6.020 achados, sem falhas de parse. Os outros 160 arquivos inventariados ficaram fora dessa seleção.
+
+Nesse arquivo, o resumo estático registra 14 definições de `BrowserWindow`, 41 preferências explícitas de conteúdo web, 11 operações IPC, 10 listeners/handlers no processo principal, 3 canais literais, 7 operações com canal dinâmico, 5 observações de validação de remetente e 2 processos utilitários (um com ponto de entrada resolvido). O grafo de aplicação e o grafo semântico continuam parciais; a análise manteve 155 incógnitas de aplicação e 21.164 incógnitas semânticas. Os números não provam execução nem cobertura dos arquivos não selecionados.
+
+Um traço estático do canal literal `electron-store-get-data` (Evidence `ev_fe5228900f6677fadb0a811237762fffbe4a3fb4e715fa6345a69b80563d7185`) encontrou uma transmissão síncrona identificada como renderer e um listener `on` no processo principal. A ligação foi classificada com confiança alta pelo REA. Os outros dois canais literais observados foram `migration-dump-done` e `migration-restore-done`. Entre os canais dinâmicos aparecem expressões `t.createKey("start")`, `t.createKey("scope")`, `t.createKey("envelope")`, `t.createKey("structured-log")`, `t.createKey("metric")`, `t.createKey("status")` e `e`; seus valores e pareamentos permanecem desconhecidos.
+
+O traço em ambas as direções alcançou 2.523 nós por causa de relações de contenção no bundle. A conclusão acima usa apenas as duas arestas diretamente ligadas ao canal selecionado; os demais nós do traço não foram tratados como participantes desse fluxo. Isso ainda não mostra o valor lido pelo handler, persistência de páginas, sincronização remota nem comportamento em execução.
+
+## Cobertura nesta etapa
+
+| Frente investigada | Estado | Evidência e limite |
+| --- | --- | --- |
+| Identidade do aplicativo desktop e empacotamento Electron | Respondida parcialmente | Manifesto, versão `7.40.0`, SHA-256 do `app.asar` e inventário REA; não representa todas as versões do Notion. |
+| API de clipboard do preload | Respondida parcialmente | Dois caminhos estáticos candidatos para escrita de texto/imagem; chamador, payload rico e colagem em runtime continuam desconhecidos. |
+| API exposta pelo preload | Respondida parcialmente | `__electronApi` lista 232 membros, incluindo navegação por bloco, abas, busca rápida, SQLite e reuniões; o status da API é dinâmico e os membros não foram confirmados em execução. |
+| Processo principal e IPC | Respondida parcialmente | Um canal literal tem transmissão e listener pareados; sete operações têm canal dinâmico e o grafo semântico tem incógnitas. |
+| Fluxos de páginas, blocos e bases de dados do produto | Não respondida pelo binário selecionado | A aplicação implementa um subconjunto guiado pela documentação pública; não houve análise focada dos módulos de interface web que implementam esses fluxos. |
+| Sincronização, API online, permissões e colaboração | Não respondida | A inspeção estática do desktop não estabelece protocolos de backend nem semântica de conta. |
+| Comportamento em execução | Não respondida | Nenhum cenário Electron/browser foi capturado nesta etapa. |
+
 ## Modelo de produto adotado
 
 O pacote desktop é uma camada Electron com janelas e comunicação entre processos. Isso, por si só, não descreve os serviços web, a persistência remota ou os protocolos internos do Notion. Para as partes visíveis ao usuário, o estudo foi combinado com a documentação oficial:
@@ -72,7 +94,7 @@ flowchart LR
 
 ## Escopo implementado e lacunas
 
-Implementado nesta versão: navegação hierárquica, favoritos, edição e cópia/colagem de blocos, comandos de inserção, tarefas com checkbox, bases com seis vistas, propriedades básicas, busca local, filtro/ordenação, tema claro/escuro e backup JSON.
+Implementado nesta versão: navegação hierárquica, favoritos, edição e cópia/colagem de blocos, comandos `/` e atalhos Markdown para blocos, tarefas com checkbox, bases com seis vistas, propriedades básicas, busca local, filtro/ordenação, tema claro/escuro e backup JSON.
 
 Fora do escopo: seleção/cópia estruturada de vários blocos, persistência do clipboard estruturado entre sessões, login, sincronização, colaboração em tempo real, permissões, comentários, integrações, API do Notion, anexos, propriedades avançadas, fórmulas, rollups, filtros combinados, vistas persistentes, relacionamento entre bases e paridade visual/comportamental completa. Não há serviço de backend; perfis de navegador não compartilham dados.
 
