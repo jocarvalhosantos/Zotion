@@ -82,6 +82,8 @@ Para aprofundar a área de bases, analisei isoladamente `22194-625f5aaea2cefe74.
 
 Nesse bundle, o REA reteve referências a `rollupPropertySchema`, `rollup_type`, `rollupType` e `collectionFeatureGates/rollup_empty_value_filter`. Os registros classificam leituras de alguns desses campos como desconhecidas porque o receptor não foi resolvido; portanto, são referências e caminhos candidatos, não prova de estado padrão ou execução. A leitura estática do trecho também expõe campos relacionados a propriedade de pessoa, propriedade-alvo e agregação. Isso reforça a decisão de manter os rollups locais explicitamente tipados, mas não permite afirmar compatibilidade com a implementação interna do Notion.
 
+Na mesma passada focada, procurei caminhos de filtros e vistas. O relatório preservou nomes candidatos como `filters`, `sort`, `viewId`, `propertyFilters`, `combinatorFilter`, `filterValue`, `subfilter` e `subfilterType`. Um trecho minificado percorre `propertyFilters` com `combinatorFilter`, e outro consulta `subfilter` durante avaliação. O grafo REA mantém receptores e várias relações como desconhecidos; esses nomes e trechos não estabelecem o esquema persistido completo, precedência entre grupos ou o comportamento em execução. Usei-os somente como pistas para ampliar o modelo local com grupos de condições AND/OR, sem alegar equivalência interna.
+
 O Chrome do usuário estava aberto no Notion, mas não expunha um endpoint local CDP em `9222` ou `9223`; por isso, o REA CLI não conseguiu capturar os scripts da página autenticada. Não tentei abrir outra sessão de depuração nem reutilizar cookies. A observação da árvore de acessibilidade da página autenticada segue limitada aos controles visíveis descritos abaixo; não houve captura de rede nem execução de cenários.
 
 ## Cobertura nesta etapa
@@ -134,9 +136,9 @@ flowchart LR
 
 ## Escopo implementado e lacunas
 
-Implementado nesta versão: navegação hierárquica, favoritos, edição e cópia/colagem de blocos, comandos `/` e atalhos Markdown para blocos, tarefas com checkbox, bases com sete vistas (incluindo gráficos locais de barras e rosca), propriedades personalizáveis de tipos básicos, relações locais de uma via, rollups calculados entre bases, busca local, vistas nomeadas com layout, filtros planos AND/OR e uma ordenação por vista, tema claro/escuro e backup JSON.
+Implementado nesta versão: navegação hierárquica, favoritos, edição e cópia/colagem de blocos, comandos `/` e atalhos Markdown para blocos, tarefas com checkbox, bases com sete vistas (incluindo gráficos locais de barras e rosca), propriedades personalizáveis de tipos básicos, relações locais de uma via, rollups calculados entre bases, busca local, vistas nomeadas com layout, filtros AND/OR com grupos aninháveis até três níveis e uma ordenação por vista, tema claro/escuro e backup JSON.
 
-Fora do escopo: seleção/cópia estruturada de vários blocos, persistência do clipboard estruturado entre sessões, login, sincronização, colaboração em tempo real, permissões, comentários, integrações, API do Notion, anexos, propriedades automáticas, fórmulas, relações inversas, grupos de filtros aninhados, várias ordenações simultâneas, gráficos de linha, formulários e paridade visual/comportamental completa. Não há serviço de backend; perfis de navegador não compartilham dados.
+Fora do escopo: seleção/cópia estruturada de vários blocos, persistência do clipboard estruturado entre sessões, login, sincronização, colaboração em tempo real, permissões, comentários, integrações, API do Notion, anexos, propriedades automáticas, fórmulas, relações inversas, profundidade de grupos de filtro sem limite, várias ordenações simultâneas, gráficos de linha, formulários e paridade visual/comportamental completa. Não há serviço de backend; perfis de navegador não compartilham dados.
 
 ## Referências
 

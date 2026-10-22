@@ -231,6 +231,18 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .database-filter-match { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; color: var(--muted); font-size: 10px; }
 .database-filter-match select { height: 26px; padding: 0 6px; color: var(--text-soft); border: 1px solid var(--border); border-radius: 4px; outline: 0; background: var(--surface); font-size: 10px; }
 .database-filter-rules { display: grid; max-height: 240px; gap: 7px; overflow-y: auto; }
+.database-filter-group { display: grid; gap: 7px; padding: 8px; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 6px; background: var(--surface-soft); }
+.database-filter-group[data-depth="2"] { margin-left: 8px; border-left-color: var(--green); }
+.database-filter-group[data-depth="3"] { margin-left: 16px; border-left-color: var(--accent); }
+.database-filter-group-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; color: var(--text-soft); font-size: 10px; }
+.database-filter-group-heading strong { margin-right: auto; color: var(--text); font-size: 10px; }
+.database-filter-group-heading label { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
+.database-filter-group-heading select { height: 25px; padding: 0 5px; color: var(--text-soft); border: 1px solid var(--border); border-radius: 4px; outline: 0; background: var(--surface); font-size: 9px; }
+.database-filter-group-heading > button:not(.database-filter-remove) { display: inline-flex; min-height: 25px; align-items: center; padding: 0 5px; gap: 3px; color: var(--text-soft); border-radius: 4px; font-size: 9px; }
+.database-filter-group-heading > button:not(.database-filter-remove):hover:not(:disabled) { background: var(--hover); }
+.database-filter-group-heading > button:disabled { color: var(--faint); cursor: default; }
+.database-filter-group-children { display: grid; gap: 7px; }
+.database-filter-group-empty { margin: 0; color: var(--muted); font-size: 9px; }
 .database-filter-rule { display: grid; grid-template-columns: minmax(92px, .9fr) minmax(115px, 1fr) minmax(90px, 1.1fr) 25px; align-items: center; gap: 5px; }
 .database-filter-rule input, .database-filter-rule select { min-width: 0; width: 100%; height: 28px; padding: 0 6px; color: var(--text-soft); border: 1px solid var(--border); border-radius: 5px; outline: 0; background: var(--surface); font-size: 10px; }
 .database-filter-remove { display: grid; width: 25px; height: 25px; place-items: center; color: var(--muted); border-radius: 4px; }

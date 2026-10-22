@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { FormEvent } from "react";
+import type { FormEvent, ReactNode } from "react";
 import {
   ArrowDownWideNarrow,
   BarChart3,
@@ -18,7 +18,7 @@ import {
   Columns3,
 } from "lucide-react";
 import { PRIORITY_OPTIONS, STATUS_OPTIONS, createDefaultDatabaseView, makeId } from "./model";
-import type { DatabaseFilterOperator, DatabaseFilterRule, DatabaseProperty, DatabasePropertyType, DatabasePropertyValue, DatabaseRow, DatabaseViewLayout, DatabaseViewSettings, Page, Priority, RollupFunction, TaskStatus } from "./model";
+import type { DatabaseFilterGroup, DatabaseFilterNode, DatabaseFilterOperator, DatabaseFilterRule, DatabaseProperty, DatabasePropertyType, DatabasePropertyValue, DatabaseRow, DatabaseViewLayout, DatabaseViewSettings, Page, Priority, RollupFunction, TaskStatus } from "./model";
 
 type ViewKind = DatabaseViewLayout;
 type ChartStyle = "Bar" | "Donut";
@@ -158,6 +158,41 @@ function parseLocaleNumber(value: string | number): number {
   return Number(thousandsGrouped ? normalized.replace(/\./g, "") : normalized);
 }
 
+function updateFilterTree(nodes: DatabaseFilterNode[], id: string, update: (node: DatabaseFilterNode) => DatabaseFilterNode): DatabaseFilterNode[] {
+  return nodes.map((node) => {
+    if (node.id === id) return update(node);
+    return node.kind === "group" ? { ...node, children: updateFilterTree(node.children, id, update) } : node;
+  });
+}
+
+function removeFilterTreeNode(nodes: DatabaseFilterNode[], id: string): DatabaseFilterNode[] {
+  return nodes.flatMap<DatabaseFilterNode>((node): DatabaseFilterNode[] => {
+    if (node.id === id) return [];
+    return node.kind === "group" ? [{ ...node, children: removeFilterTreeNode(node.children, id) }] : [node];
+  });
+}
+
+function countFilterRules(nodes: DatabaseFilterNode[]): number {
+  return nodes.reduce((count, node) => count + (node.kind === "group" ? countFilterRules(node.children) : 1), 0);
+}
+
+function getFilterGroupDepth(nodes: DatabaseFilterNode[], id: string, depth = 1): number | null {
+  for (const node of nodes) {
+    if (node.kind !== "group") continue;
+    if (node.id === id) return depth;
+    const nestedDepth = getFilterGroupDepth(node.children, id, depth + 1);
+    if (nestedDepth !== null) return nestedDepth;
+  }
+  return null;
+}
+
+function removePropertyFilters(nodes: DatabaseFilterNode[], propertyIds: Set<string>): DatabaseFilterNode[] {
+  return nodes.flatMap<DatabaseFilterNode>((node): DatabaseFilterNode[] => {
+    if (node.kind === "group") return [{ ...node, children: removePropertyFilters(node.children, propertyIds) }];
+    return propertyIds.has(node.propertyId) ? [] : [node];
+  });
+}
+
 function getCalendarMonth(date: Date, amount: number): Date {
   return new Date(date.getFullYear(), date.getMonth() + amount, 1);
 }
@@ -165,7 +200,7 @@ function getCalendarMonth(date: Date, amount: number): Date {
 export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties, onUpdateViews, onUpdateActiveViewId }: DatabaseViewProps) {
   const databaseViews = useMemo(() => {
     const storedViews = page.databaseViews?.length ? page.databaseViews : [DEFAULT_DATABASE_VIEW];
-    return storedViews.map((storedView) => ({ ...DEFAULT_DATABASE_VIEW, ...storedView, filters: storedView.filters ?? [] }));
+    return storedViews.map((storedView) => ({ ...DEFAULT_DATABASE_VIEW, ...storedView, filters: storedView.filters ?? [], filterGroups: storedView.filterGroups ?? [] }));
   }, [page.databaseViews]);
   const activeViewId = databaseViews.some((candidate) => candidate.id === page.activeDatabaseViewId)
     ? page.activeDatabaseViewId!
@@ -338,6 +373,12 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
     return false;
   };
 
+  const matchesFilterGroup = (row: DatabaseRow, group: DatabaseFilterGroup): boolean | null => {
+    const matches = group.children.map((child) => child.kind === "group" ? matchesFilterGroup(row, child) : matchesFilter(row, child)).filter((match): match is boolean => match !== null);
+    if (matches.length === 0) return null;
+    return group.filterMatch === "OR" ? matches.some(Boolean) : matches.every(Boolean);
+  };
+
   const getFilterChoices = (property: DatabaseProperty) => {
     if (property.id === "status") return STATUS_OPTIONS.map((value) => ({ value, label: STATUS_LABELS[value] }));
     if (property.id === "priority") return PRIORITY_OPTIONS.map((value) => ({ value, label: PRIORITY_LABELS[value] }));
@@ -359,7 +400,10 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
     const result = rows.filter((row) => {
       const customValues = properties.map((property) => propertyDisplayText(row, property));
       const matchesText = !text || [row.title, row.assignee, row.category, row.priority, row.status, ...customValues].some((value) => value.toLowerCase().includes(text));
-      const matches = (activeView.filters ?? []).map((filter) => matchesFilter(row, filter));
+      const matches = [
+        ...(activeView.filters ?? []).map((filter) => matchesFilter(row, filter)),
+        ...(activeView.filterGroups ?? []).map((group) => matchesFilterGroup(row, group)),
+      ].filter((match): match is boolean => match !== null);
       const matchesFilters = matches.length === 0 || (activeView.filterMatch === "OR" ? matches.some(Boolean) : matches.every(Boolean));
       return matchesText && matchesFilters;
     });
@@ -389,15 +433,45 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
   };
 
   const updateFilter = (id: string, update: Partial<DatabaseFilterRule>) => {
-    updateActiveView({ filters: activeView.filters.map((filter) => filter.id === id ? { ...filter, ...update } : filter) });
+    if (activeView.filters.some((filter) => filter.id === id)) {
+      updateActiveView({ filters: activeView.filters.map((filter) => filter.id === id ? { ...filter, ...update } : filter) });
+      return;
+    }
+    updateActiveView({ filterGroups: updateFilterTree(activeView.filterGroups ?? [], id, (node) => node.kind === "group" ? node : { ...node, ...update }) as DatabaseFilterGroup[] });
   };
 
-  const addFilter = () => {
+  const addFilter = (groupId?: string) => {
     const filter: DatabaseFilterRule = { id: makeId("filter"), propertyId: "title", operator: "contains", value: "" };
-    updateActiveView({ filters: [...activeView.filters, filter] });
+    if (!groupId) {
+      updateActiveView({ filters: [...activeView.filters, filter] });
+      return;
+    }
+    updateActiveView({ filterGroups: updateFilterTree(activeView.filterGroups ?? [], groupId, (node) => node.kind === "group" ? { ...node, children: [...node.children, filter] } : node) as DatabaseFilterGroup[] });
   };
 
-  const removeFilter = (id: string) => updateActiveView({ filters: activeView.filters.filter((filter) => filter.id !== id) });
+  const addFilterGroup = (parentId?: string) => {
+    const groups = activeView.filterGroups ?? [];
+    const parentDepth = parentId ? getFilterGroupDepth(groups, parentId) : null;
+    if (parentId && (parentDepth === null || parentDepth >= 3)) return;
+    const group: DatabaseFilterGroup = { id: makeId("filter-group"), kind: "group", filterMatch: "AND", children: [] };
+    if (!parentId) {
+      updateActiveView({ filterGroups: [...groups, group] });
+      return;
+    }
+    updateActiveView({ filterGroups: updateFilterTree(groups, parentId, (node) => node.kind === "group" ? { ...node, children: [...node.children, group] } : node) as DatabaseFilterGroup[] });
+  };
+
+  const removeFilter = (id: string) => {
+    if (activeView.filters.some((filter) => filter.id === id)) {
+      updateActiveView({ filters: activeView.filters.filter((filter) => filter.id !== id) });
+      return;
+    }
+    updateActiveView({ filterGroups: removeFilterTreeNode(activeView.filterGroups ?? [], id) as DatabaseFilterGroup[] });
+  };
+
+  const updateFilterGroupMatch = (id: string, filterMatch: "AND" | "OR") => {
+    updateActiveView({ filterGroups: updateFilterTree(activeView.filterGroups ?? [], id, (node) => node.kind === "group" ? { ...node, filterMatch } : node) as DatabaseFilterGroup[] });
+  };
 
   const submitNewView = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -413,6 +487,7 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
       name,
       layout: viewLayout,
       filters: [],
+      filterGroups: [],
       filterMatch: "AND",
       sortPropertyId: "",
       sortDirection: "Ascending",
@@ -446,6 +521,42 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
     }
     return <input type="text" value={filter.value} onChange={(event) => updateValue(event.target.value)} aria-label={`Valor do filtro ${property.name}`} placeholder="Valor" />;
   };
+
+  const renderFilterRule = (filter: DatabaseFilterRule): ReactNode => {
+    const property = filterProperties.find((candidate) => candidate.id === filter.propertyId) ?? BUILTIN_DATABASE_PROPERTIES[0];
+    const operators = getFilterOperators(property);
+    const operator = operators.includes(filter.operator) ? filter.operator : operators[0];
+    return <div className="database-filter-rule" key={filter.id}>
+      <select value={property.id} onChange={(event) => {
+        const nextProperty = filterProperties.find((candidate) => candidate.id === event.target.value) ?? BUILTIN_DATABASE_PROPERTIES[0];
+        updateFilter(filter.id, { propertyId: nextProperty.id, operator: getFilterOperators(nextProperty)[0], value: "" });
+      }} aria-label="Propriedade do filtro">{filterProperties.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select>
+      <select value={operator} onChange={(event) => updateFilter(filter.id, { operator: event.target.value as DatabaseFilterOperator })} aria-label="Operador do filtro">{operators.map((option) => <option key={option} value={option}>{FILTER_OPERATOR_LABELS[option]}</option>)}</select>
+      {renderFilterValue({ ...filter, operator }, property)}
+      <button type="button" className="database-filter-remove" aria-label="Remover filtro" title="Remover filtro" onClick={() => removeFilter(filter.id)}><Trash2 size={13} /></button>
+    </div>;
+  };
+
+  const renderFilterNode = (node: DatabaseFilterNode, depth: number): ReactNode => {
+    if (node.kind !== "group") return renderFilterRule(node);
+    return <div className="database-filter-group" key={node.id} data-depth={depth}>
+      <div className="database-filter-group-heading">
+        <strong>Grupo {depth}</strong>
+        <label>Correspondência<select value={node.filterMatch} onChange={(event) => updateFilterGroupMatch(node.id, event.target.value as "AND" | "OR")} aria-label={`Lógica do grupo ${depth}`}><option value="AND">todas (AND)</option><option value="OR">qualquer (OR)</option></select></label>
+        <button type="button" onClick={() => addFilter(node.id)}><Plus size={12} /> Filtro</button>
+        <button type="button" onClick={() => addFilterGroup(node.id)} disabled={depth >= 3} title={depth >= 3 ? "Limite de três níveis de grupos" : "Adicionar grupo aninhado"}><Plus size={12} /> Grupo</button>
+        <button type="button" className="database-filter-remove" aria-label="Remover grupo de filtros" title="Remover grupo" onClick={() => removeFilter(node.id)}><Trash2 size={13} /></button>
+      </div>
+      <div className="database-filter-group-children">
+        {node.children.length === 0
+          ? <p className="database-filter-group-empty">Grupo vazio: adicione uma condição ou outro grupo.</p>
+          : node.children.map((child) => renderFilterNode(child, depth + 1))}
+      </div>
+    </div>;
+  };
+
+  const filterCount = activeView.filters.length + countFilterRules(activeView.filterGroups ?? []);
+  const hasFilterGroups = (activeView.filterGroups ?? []).length > 0;
 
   const updateRow = (id: string, update: Partial<DatabaseRow>) => {
     onUpdateRows(rows.map((row) => (row.id === id ? { ...row, ...update } : row)));
@@ -490,6 +601,7 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
     onUpdateViews(databaseViews.map((viewSettings) => ({
       ...viewSettings,
       filters: viewSettings.filters.filter((filter) => !removedPropertyIds.has(filter.propertyId)),
+      filterGroups: removePropertyFilters(viewSettings.filterGroups ?? [], removedPropertyIds) as DatabaseFilterGroup[],
       sortPropertyId: removedPropertyIds.has(viewSettings.sortPropertyId) ? "" : viewSettings.sortPropertyId,
     })));
     onUpdateRows(rows.map((row) => {
@@ -639,30 +751,18 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar na base de dados" aria-label="Buscar na base de dados" />
           </label>
           <div className="database-popover-wrap">
-            <button className={`icon-button database-sort ${filterOpen || activeView.filters.length ? "selected" : ""}`} type="button" title="Filtrar esta visualização" aria-expanded={filterOpen} onClick={() => { setFilterOpen((open) => !open); setSortOpen(false); setViewSettingsOpen(false); }}>
-              <Filter size={16} /><span>Filtrar{activeView.filters.length ? ` · ${activeView.filters.length}` : ""}</span>
+            <button className={`icon-button database-sort ${filterOpen || filterCount > 0 || hasFilterGroups ? "selected" : ""}`} type="button" title="Filtrar esta visualização" aria-expanded={filterOpen} onClick={() => { setFilterOpen((open) => !open); setSortOpen(false); setViewSettingsOpen(false); }}>
+              <Filter size={16} /><span>Filtrar{filterCount ? ` · ${filterCount}` : ""}</span>
             </button>
             {filterOpen && <div className="database-filter-popover" role="dialog" aria-label="Filtros da visualização">
-              <div className="database-popover-heading"><strong>Filtros</strong><span>{activeView.filters.length} {activeView.filters.length === 1 ? "condição" : "condições"}</span></div>
-              {activeView.filters.length > 1 && <label className="database-filter-match">Mostrar páginas que correspondam a<select value={activeView.filterMatch} onChange={(event) => updateActiveView({ filterMatch: event.target.value as "AND" | "OR" })} aria-label="Lógica dos filtros"><option value="AND">todas as condições</option><option value="OR">qualquer condição</option></select></label>}
+              <div className="database-popover-heading"><strong>Filtros</strong><span>{filterCount} {filterCount === 1 ? "condição" : "condições"}</span></div>
+              {(filterCount > 1 || hasFilterGroups) && <label className="database-filter-match">Mostrar páginas que correspondam a<select value={activeView.filterMatch} onChange={(event) => updateActiveView({ filterMatch: event.target.value as "AND" | "OR" })} aria-label="Lógica dos filtros"><option value="AND">todas as condições</option><option value="OR">qualquer condição</option></select></label>}
               <div className="database-filter-rules">
-                {activeView.filters.map((filter) => {
-                  const property = filterProperties.find((candidate) => candidate.id === filter.propertyId) ?? BUILTIN_DATABASE_PROPERTIES[0];
-                  const operators = getFilterOperators(property);
-                  const operator = operators.includes(filter.operator) ? filter.operator : operators[0];
-                  return <div className="database-filter-rule" key={filter.id}>
-                    <select value={property.id} onChange={(event) => {
-                      const nextProperty = filterProperties.find((candidate) => candidate.id === event.target.value) ?? BUILTIN_DATABASE_PROPERTIES[0];
-                      updateFilter(filter.id, { propertyId: nextProperty.id, operator: getFilterOperators(nextProperty)[0], value: "" });
-                    }} aria-label="Propriedade do filtro">{filterProperties.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select>
-                    <select value={operator} onChange={(event) => updateFilter(filter.id, { operator: event.target.value as DatabaseFilterOperator })} aria-label="Operador do filtro">{operators.map((option) => <option key={option} value={option}>{FILTER_OPERATOR_LABELS[option]}</option>)}</select>
-                    {renderFilterValue({ ...filter, operator }, property)}
-                    <button type="button" className="database-filter-remove" aria-label="Remover filtro" title="Remover filtro" onClick={() => removeFilter(filter.id)}><Trash2 size={13} /></button>
-                  </div>;
-                })}
-                {activeView.filters.length === 0 && <p className="database-property-empty">Adicione uma condição para filtrar as páginas desta visualização.</p>}
+                {activeView.filters.map(renderFilterRule)}
+                {(activeView.filterGroups ?? []).map((group) => renderFilterNode(group, 1))}
+                {filterCount === 0 && !hasFilterGroups && <p className="database-property-empty">Adicione condições e grupos para filtrar as páginas desta visualização.</p>}
               </div>
-              <div className="database-popover-actions"><button type="button" onClick={addFilter}><Plus size={13} /> Adicionar filtro</button><button type="button" onClick={() => updateActiveView({ filters: [] })} disabled={activeView.filters.length === 0}>Limpar</button></div>
+              <div className="database-popover-actions"><button type="button" onClick={() => addFilter()}><Plus size={13} /> Adicionar filtro</button><button type="button" onClick={() => addFilterGroup()}><Plus size={13} /> Adicionar grupo</button><button type="button" onClick={() => updateActiveView({ filters: [], filterGroups: [] })} disabled={filterCount === 0 && !hasFilterGroups}>Limpar</button></div>
             </div>}
           </div>
           <div className="database-popover-wrap">
@@ -897,7 +997,7 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
           </div>
         )}
       </div>
-      <div className="database-footer"><span>{visibleRows.length} {visibleRows.length === 1 ? "página" : "páginas"}</span><span>·</span><button type="button" onClick={() => { setQuery(""); updateActiveView({ filters: [], filterMatch: "AND", sortPropertyId: "", sortDirection: "Ascending" }); }}>Limpar filtros e ordenação</button></div>
+      <div className="database-footer"><span>{visibleRows.length} {visibleRows.length === 1 ? "página" : "páginas"}</span><span>·</span><button type="button" onClick={() => { setQuery(""); updateActiveView({ filters: [], filterGroups: [], filterMatch: "AND", sortPropertyId: "", sortDirection: "Ascending" }); }}>Limpar filtros e ordenação</button></div>
     </section>
   );
 }

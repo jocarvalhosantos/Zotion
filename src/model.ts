@@ -70,16 +70,27 @@ export type DatabaseFilterOperator =
 
 export interface DatabaseFilterRule {
   id: string;
+  kind?: undefined;
   propertyId: string;
   operator: DatabaseFilterOperator;
   value: string;
 }
+
+export interface DatabaseFilterGroup {
+  id: string;
+  kind: "group";
+  filterMatch: "AND" | "OR";
+  children: DatabaseFilterNode[];
+}
+
+export type DatabaseFilterNode = DatabaseFilterRule | DatabaseFilterGroup;
 
 export interface DatabaseViewSettings {
   id: string;
   name: string;
   layout: DatabaseViewLayout;
   filters: DatabaseFilterRule[];
+  filterGroups?: DatabaseFilterGroup[];
   filterMatch: "AND" | "OR";
   sortPropertyId: string;
   sortDirection: "Ascending" | "Descending";
@@ -314,6 +325,7 @@ export function createDefaultDatabaseView(): DatabaseViewSettings {
     name: "Tabela",
     layout: "Table",
     filters: [],
+    filterGroups: [],
     filterMatch: "AND",
     sortPropertyId: "",
     sortDirection: "Ascending",

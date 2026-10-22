@@ -22,7 +22,7 @@ import {
 import { BlockEditor } from "./BlockEditor";
 import { DatabaseView } from "./DatabaseView";
 import { createDefaultDatabaseView, createInitialWorkspace, formatUpdatedAt, makeId } from "./model";
-import type { ContentBlock, Page, WorkspaceData } from "./model";
+import type { ContentBlock, DatabaseFilterGroup, DatabaseFilterNode, Page, WorkspaceData } from "./model";
 import "./App.css";
 
 const STORAGE_KEY = "workspace-lab-v1";
@@ -152,10 +152,15 @@ function App() {
 
   const duplicatePage = (page: Page) => {
     const id = makeId(page.kind === "database" ? "database" : "page");
+    const duplicateFilterNode = (node: DatabaseFilterNode): DatabaseFilterNode => node.kind === "group"
+      ? { ...node, id: makeId("filter-group"), children: node.children.map(duplicateFilterNode) }
+      : { ...node, id: makeId("filter") };
+    const duplicateFilterGroup = (group: DatabaseFilterGroup): DatabaseFilterGroup => duplicateFilterNode(group) as DatabaseFilterGroup;
     const databaseViews = page.databaseViews?.map((view) => ({
       ...view,
       id: makeId("view"),
       filters: (view.filters ?? []).map((filter) => ({ ...filter, id: makeId("filter") })),
+      filterGroups: (view.filterGroups ?? []).map(duplicateFilterGroup),
     }));
     const activeViewIndex = page.databaseViews?.findIndex((view) => view.id === page.activeDatabaseViewId) ?? -1;
     const duplicate: Page = {
