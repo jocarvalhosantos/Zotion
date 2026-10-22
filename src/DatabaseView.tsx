@@ -17,15 +17,17 @@ import {
   Trash2,
   Columns3,
 } from "lucide-react";
-import { PRIORITY_OPTIONS, STATUS_OPTIONS, makeId } from "./model";
-import type { DatabaseProperty, DatabasePropertyType, DatabasePropertyValue, DatabaseRow, Page, Priority, RollupFunction, TaskStatus } from "./model";
+import { PRIORITY_OPTIONS, STATUS_OPTIONS, createDefaultDatabaseView, makeId } from "./model";
+import type { DatabaseFilterOperator, DatabaseFilterRule, DatabaseProperty, DatabasePropertyType, DatabasePropertyValue, DatabaseRow, DatabaseViewLayout, DatabaseViewSettings, Page, Priority, RollupFunction, TaskStatus } from "./model";
 
-type ViewKind = "Table" | "Board" | "List" | "Calendar" | "Gallery" | "Timeline" | "Chart";
+type ViewKind = DatabaseViewLayout;
 type ChartStyle = "Bar" | "Donut";
 
 const STATUS_LABELS: Record<TaskStatus, string> = { "Not started": "Não iniciada", "In progress": "Em andamento", Done: "Concluída" };
 const PRIORITY_LABELS: Record<Priority, string> = { Low: "Baixa", Medium: "Média", High: "Alta" };
 const VIEW_LABELS: Record<ViewKind, string> = { Table: "Tabela", Board: "Quadro", List: "Lista", Calendar: "Calendário", Gallery: "Galeria", Timeline: "Linha do tempo", Chart: "Gráfico" };
+const DEFAULT_DATABASE_VIEW = createDefaultDatabaseView();
+const VIEW_LAYOUTS: ViewKind[] = ["Table", "Board", "List", "Calendar", "Gallery", "Timeline", "Chart"];
 const PROPERTY_TYPES: DatabasePropertyType[] = ["Text", "Number", "Select", "Multi-select", "Date", "Checkbox", "URL", "Email", "Phone", "Person", "Relation", "Rollup"];
 const PROPERTY_TYPE_LABELS: Record<DatabasePropertyType, string> = {
   Text: "Texto",
@@ -63,6 +65,7 @@ const ROLLUP_FUNCTION_LABELS: Record<RollupFunction, string> = {
 };
 const ROLLUP_COMMON_FUNCTIONS: RollupFunction[] = ["Show original", "Show unique values", "Count all", "Count values", "Count unique values", "Count empty", "Count not empty", "Percent empty", "Percent not empty"];
 const ROLLUP_NUMBER_FUNCTIONS: RollupFunction[] = ["Sum", "Average", "Median", "Min", "Max", "Range"];
+const ROLLUP_NUMERIC_FUNCTIONS: RollupFunction[] = ["Count all", "Count values", "Count unique values", "Count empty", "Count not empty", "Percent empty", "Percent not empty", ...ROLLUP_NUMBER_FUNCTIONS];
 const ROLLUP_DATE_FUNCTIONS: RollupFunction[] = ["Earliest date", "Latest date", "Date range"];
 const BUILTIN_DATABASE_PROPERTIES: DatabaseProperty[] = [
   { id: "title", name: "Nome", type: "Text" },
@@ -78,6 +81,8 @@ interface DatabaseViewProps {
   allPages: Page[];
   onUpdateRows: (rows: DatabaseRow[]) => void;
   onUpdateProperties: (properties: DatabaseProperty[]) => void;
+  onUpdateViews: (views: DatabaseViewSettings[]) => void;
+  onUpdateActiveViewId: (viewId: string) => void;
 }
 
 function formatDate(value: string): string {
@@ -114,20 +119,71 @@ function isEmptyPropertyValue(value: DatabasePropertyValue): boolean {
   return value === null || value === "" || (Array.isArray(value) && value.length === 0);
 }
 
+const FILTER_OPERATOR_LABELS: Record<DatabaseFilterOperator, string> = {
+  is: "é",
+  "is-not": "não é",
+  contains: "contém",
+  "does-not-contain": "não contém",
+  "is-empty": "está vazio",
+  "is-not-empty": "não está vazio",
+  "greater-than": "é maior que",
+  "less-than": "é menor que",
+  "on-or-before": "é nesta data ou antes",
+  "on-or-after": "é nesta data ou depois",
+};
+
+function isNumericProperty(property: DatabaseProperty): boolean {
+  return property.type === "Number" || (property.type === "Rollup" && ROLLUP_NUMERIC_FUNCTIONS.includes(property.rollupFunction ?? "Count all"));
+}
+
+function getFilterOperators(property: DatabaseProperty): DatabaseFilterOperator[] {
+  const emptyOperators: DatabaseFilterOperator[] = ["is-empty", "is-not-empty"];
+  if (isNumericProperty(property)) {
+    return ["is", "is-not", "greater-than", "less-than", ...emptyOperators];
+  }
+  if (property.type === "Date") {
+    return ["is", "is-not", "on-or-before", "on-or-after", ...emptyOperators];
+  }
+  if (property.type === "Select" || property.type === "Checkbox") return ["is", "is-not", ...emptyOperators];
+  if (property.type === "Multi-select" || property.type === "Relation") return ["contains", "does-not-contain", ...emptyOperators];
+  return ["contains", "does-not-contain", "is", "is-not", ...emptyOperators];
+}
+
+function parseLocaleNumber(value: string | number): number {
+  if (typeof value === "number") return value;
+  const normalized = value.trim().replace(/%$/, "");
+  if (!normalized) return Number.NaN;
+  if (normalized.includes(",")) return Number(normalized.replace(/\./g, "").replace(",", "."));
+  const thousandsGrouped = /^-?\d{1,3}(?:\.\d{3})+$/.test(normalized);
+  return Number(thousandsGrouped ? normalized.replace(/\./g, "") : normalized);
+}
+
 function getCalendarMonth(date: Date, amount: number): Date {
   return new Date(date.getFullYear(), date.getMonth() + amount, 1);
 }
 
-export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties }: DatabaseViewProps) {
-  const [view, setView] = useState<ViewKind>("Table");
+export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties, onUpdateViews, onUpdateActiveViewId }: DatabaseViewProps) {
+  const databaseViews = useMemo(() => {
+    const storedViews = page.databaseViews?.length ? page.databaseViews : [DEFAULT_DATABASE_VIEW];
+    return storedViews.map((storedView) => ({ ...DEFAULT_DATABASE_VIEW, ...storedView, filters: storedView.filters ?? [] }));
+  }, [page.databaseViews]);
+  const activeViewId = databaseViews.some((candidate) => candidate.id === page.activeDatabaseViewId)
+    ? page.activeDatabaseViewId!
+    : databaseViews[0].id;
+  const activeView = databaseViews.find((candidate) => candidate.id === activeViewId) ?? databaseViews[0];
+  const view = activeView.layout;
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<TaskStatus | "Todos">("Todos");
-  const [sortByDueDate, setSortByDueDate] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
   const [draggedRowId, setDraggedRowId] = useState<string | null>(null);
   const [chartStyle, setChartStyle] = useState<ChartStyle>("Bar");
   const [chartGroupBy, setChartGroupBy] = useState("status");
   const [propertyManagerOpen, setPropertyManagerOpen] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [sortOpen, setSortOpen] = useState(false);
+  const [viewCreateOpen, setViewCreateOpen] = useState(false);
+  const [viewSettingsOpen, setViewSettingsOpen] = useState(false);
+  const [viewName, setViewName] = useState("");
+  const [viewLayout, setViewLayout] = useState<ViewKind>("Table");
   const [propertyName, setPropertyName] = useState("");
   const [propertyType, setPropertyType] = useState<DatabasePropertyType>("Text");
   const [propertyOptions, setPropertyOptions] = useState("");
@@ -137,6 +193,7 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties 
   const [rollupFunction, setRollupFunction] = useState<RollupFunction>("Count all");
   const rows = page.rows ?? [];
   const properties = page.databaseProperties ?? [];
+  const filterProperties = [...BUILTIN_DATABASE_PROPERTIES, ...properties];
 
   const rollupRelationProperties = properties.filter((property) => property.type === "Relation");
   const selectedRollupRelationPropertyId = rollupRelationProperties.some((property) => property.id === rollupRelationPropertyId)
@@ -227,17 +284,168 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties 
     return propertyValueText(value, property.type);
   };
 
+  const getFilterValue = (row: DatabaseRow, property: DatabaseProperty): DatabasePropertyValue => {
+    if (property.type === "Relation" || property.type === "Rollup") return propertyDisplayText(row, property);
+    return getRowPropertyValue(row, property.id);
+  };
+
+  const matchesFilter = (row: DatabaseRow, filter: DatabaseFilterRule): boolean => {
+    const property = filterProperties.find((candidate) => candidate.id === filter.propertyId);
+    if (!property) return true;
+    const rawValue = getFilterValue(row, property);
+    const empty = isEmptyPropertyValue(rawValue);
+    if (filter.operator === "is-empty") return empty;
+    if (filter.operator === "is-not-empty") return !empty;
+    if (empty) return false;
+
+    if (isNumericProperty(property)) {
+      const actual = parseLocaleNumber(typeof rawValue === "number" ? rawValue : String(rawValue));
+      const expected = Number(filter.value);
+      if (Number.isNaN(actual) || Number.isNaN(expected)) return false;
+      if (filter.operator === "is") return actual === expected;
+      if (filter.operator === "is-not") return actual !== expected;
+      if (filter.operator === "greater-than") return actual > expected;
+      if (filter.operator === "less-than") return actual < expected;
+      return false;
+    }
+
+    if (property.type === "Checkbox") {
+      const actual = rawValue === true;
+      const expected = filter.value === "true";
+      if (filter.operator === "is") return actual === expected;
+      if (filter.operator === "is-not") return actual !== expected;
+      return false;
+    }
+
+    const normalize = (value: string | number | boolean) => String(value).trim().toLocaleLowerCase("pt-BR");
+    const expected = normalize(filter.value);
+    if (filter.operator === "contains" || filter.operator === "does-not-contain") {
+      const found = Array.isArray(rawValue)
+        ? rawValue.some((item) => normalize(item).includes(expected))
+        : normalize(String(rawValue)).includes(expected);
+      return filter.operator === "contains" ? found : !found;
+    }
+    if (filter.operator === "is" || filter.operator === "is-not") {
+      const found = Array.isArray(rawValue)
+        ? rawValue.some((item) => normalize(item) === expected)
+        : normalize(String(rawValue)) === expected;
+      return filter.operator === "is" ? found : !found;
+    }
+    if (property.type === "Date" && (filter.operator === "on-or-before" || filter.operator === "on-or-after")) {
+      const actual = String(rawValue);
+      return filter.operator === "on-or-before" ? actual <= filter.value : actual >= filter.value;
+    }
+    return false;
+  };
+
+  const getFilterChoices = (property: DatabaseProperty) => {
+    if (property.id === "status") return STATUS_OPTIONS.map((value) => ({ value, label: STATUS_LABELS[value] }));
+    if (property.id === "priority") return PRIORITY_OPTIONS.map((value) => ({ value, label: PRIORITY_LABELS[value] }));
+    if (property.type === "Checkbox") return [{ value: "true", label: "Marcado" }, { value: "false", label: "Desmarcado" }];
+    if (property.type === "Relation") {
+      const targetPage = allPages.find((candidate) => candidate.id === property.relationDatabaseId);
+      return (targetPage?.rows ?? []).map((row) => ({ value: row.title, label: row.title || "Sem título" }));
+    }
+    const values = rows.flatMap((row) => {
+      const value = getFilterValue(row, property);
+      return Array.isArray(value) ? value.map(String) : value === null || value === "" ? [] : [String(value)];
+    });
+    const uniqueValues = [...new Set([...(property.options ?? []), ...values])];
+    return uniqueValues.map((value) => ({ value, label: value }));
+  };
+
   const visibleRows = useMemo(() => {
     const text = query.trim().toLowerCase();
     const result = rows.filter((row) => {
       const customValues = properties.map((property) => propertyDisplayText(row, property));
       const matchesText = !text || [row.title, row.assignee, row.category, row.priority, row.status, ...customValues].some((value) => value.toLowerCase().includes(text));
-      const matchesStatus = statusFilter === "Todos" || row.status === statusFilter;
-      return matchesText && matchesStatus;
+      const matches = (activeView.filters ?? []).map((filter) => matchesFilter(row, filter));
+      const matchesFilters = matches.length === 0 || (activeView.filterMatch === "OR" ? matches.some(Boolean) : matches.every(Boolean));
+      return matchesText && matchesFilters;
     });
-    if (sortByDueDate) result.sort((a, b) => (a.dueDate || "9999").localeCompare(b.dueDate || "9999"));
+    const sortProperty = filterProperties.find((property) => property.id === activeView.sortPropertyId);
+    if (sortProperty) {
+      result.sort((a, b) => {
+        const aValue = getFilterValue(a, sortProperty);
+        const bValue = getFilterValue(b, sortProperty);
+        const aEmpty = isEmptyPropertyValue(aValue);
+        const bEmpty = isEmptyPropertyValue(bValue);
+        if (aEmpty !== bEmpty) return aEmpty ? 1 : -1;
+        let order = 0;
+        if (isNumericProperty(sortProperty)) {
+          order = parseLocaleNumber(typeof aValue === "number" ? aValue : String(aValue)) - parseLocaleNumber(typeof bValue === "number" ? bValue : String(bValue));
+          if (!Number.isFinite(order)) order = 0;
+        } else {
+          order = String(aValue).localeCompare(String(bValue), "pt-BR", { numeric: true, sensitivity: "base" });
+        }
+        return activeView.sortDirection === "Descending" ? -order : order;
+      });
+    }
     return result;
-  }, [rows, query, statusFilter, sortByDueDate, properties, allPages]);
+  }, [rows, query, activeView, properties, allPages, filterProperties]);
+
+  const updateActiveView = (update: Partial<DatabaseViewSettings>) => {
+    onUpdateViews(databaseViews.map((candidate) => candidate.id === activeView.id ? { ...candidate, ...update } : candidate));
+  };
+
+  const updateFilter = (id: string, update: Partial<DatabaseFilterRule>) => {
+    updateActiveView({ filters: activeView.filters.map((filter) => filter.id === id ? { ...filter, ...update } : filter) });
+  };
+
+  const addFilter = () => {
+    const filter: DatabaseFilterRule = { id: makeId("filter"), propertyId: "title", operator: "contains", value: "" };
+    updateActiveView({ filters: [...activeView.filters, filter] });
+  };
+
+  const removeFilter = (id: string) => updateActiveView({ filters: activeView.filters.filter((filter) => filter.id !== id) });
+
+  const submitNewView = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const baseName = viewName.trim() || VIEW_LABELS[viewLayout];
+    let name = baseName;
+    let suffix = 2;
+    while (databaseViews.some((candidate) => candidate.name.toLocaleLowerCase("pt-BR") === name.toLocaleLowerCase("pt-BR"))) {
+      name = `${baseName} ${suffix}`;
+      suffix += 1;
+    }
+    const newView: DatabaseViewSettings = {
+      id: makeId("view"),
+      name,
+      layout: viewLayout,
+      filters: [],
+      filterMatch: "AND",
+      sortPropertyId: "",
+      sortDirection: "Ascending",
+    };
+    onUpdateViews([...databaseViews, newView]);
+    onUpdateActiveViewId(newView.id);
+    setViewName("");
+    setViewLayout("Table");
+    setViewCreateOpen(false);
+    setViewSettingsOpen(false);
+  };
+
+  const deleteActiveView = () => {
+    if (databaseViews.length <= 1) return;
+    const nextViews = databaseViews.filter((candidate) => candidate.id !== activeView.id);
+    const nextView = nextViews[Math.max(0, databaseViews.findIndex((candidate) => candidate.id === activeView.id) - 1)] ?? nextViews[0];
+    onUpdateViews(nextViews);
+    onUpdateActiveViewId(nextView.id);
+    setViewSettingsOpen(false);
+  };
+
+  const renderFilterValue = (filter: DatabaseFilterRule, property: DatabaseProperty) => {
+    if (filter.operator === "is-empty" || filter.operator === "is-not-empty") return null;
+    const updateValue = (value: string) => updateFilter(filter.id, { value });
+    const isNumber = property.type === "Number" || (property.type === "Rollup" && ["Sum", "Average", "Median", "Min", "Max", "Range"].includes(property.rollupFunction ?? ""));
+    if (property.type === "Date") return <input type="date" value={filter.value} onChange={(event) => updateValue(event.target.value)} aria-label={`Valor do filtro ${property.name}`} />;
+    if (isNumber) return <input type="number" value={filter.value} onChange={(event) => updateValue(event.target.value)} aria-label={`Valor do filtro ${property.name}`} placeholder="Número" />;
+    if (["Select", "Checkbox", "Relation"].includes(property.type)) {
+      const choices = getFilterChoices(property);
+      if (choices.length > 0) return <select value={filter.value} onChange={(event) => updateValue(event.target.value)} aria-label={`Valor do filtro ${property.name}`}><option value="">Escolher valor</option>{choices.map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</select>;
+    }
+    return <input type="text" value={filter.value} onChange={(event) => updateValue(event.target.value)} aria-label={`Valor do filtro ${property.name}`} placeholder="Valor" />;
+  };
 
   const updateRow = (id: string, update: Partial<DatabaseRow>) => {
     onUpdateRows(rows.map((row) => (row.id === id ? { ...row, ...update } : row)));
@@ -279,6 +487,11 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties 
       ...properties.filter((property) => property.type === "Rollup" && property.rollupRelationPropertyId === id).map((property) => property.id),
     ]);
     onUpdateProperties(properties.filter((property) => !removedPropertyIds.has(property.id)));
+    onUpdateViews(databaseViews.map((viewSettings) => ({
+      ...viewSettings,
+      filters: viewSettings.filters.filter((filter) => !removedPropertyIds.has(filter.propertyId)),
+      sortPropertyId: removedPropertyIds.has(viewSettings.sortPropertyId) ? "" : viewSettings.sortPropertyId,
+    })));
     onUpdateRows(rows.map((row) => {
       const next = { ...(row.properties ?? {}) };
       for (const propertyId of removedPropertyIds) delete next[propertyId];
@@ -402,31 +615,77 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties 
     <section className="database-view" aria-label={`${page.title} database`}>
       <div className="database-toolbar">
         <div className="database-tabs" role="tablist" aria-label="Visualizações da base de dados">
-          {(["Table", "Board", "List", "Calendar", "Gallery", "Timeline", "Chart"] as ViewKind[]).map((kind) => {
-            const Icon = kind === "Table" ? Table2 : kind === "Board" ? Columns3 : kind === "List" ? List : kind === "Calendar" ? CalendarDays : kind === "Gallery" ? LayoutGrid : kind === "Chart" ? BarChart3 : GanttChart;
+          {databaseViews.map((databaseView) => {
+            const Icon = databaseView.layout === "Table" ? Table2 : databaseView.layout === "Board" ? Columns3 : databaseView.layout === "List" ? List : databaseView.layout === "Calendar" ? CalendarDays : databaseView.layout === "Gallery" ? LayoutGrid : databaseView.layout === "Chart" ? BarChart3 : GanttChart;
             return (
-              <button key={kind} role="tab" aria-selected={view === kind} className={`database-tab ${view === kind ? "active" : ""}`} onClick={() => setView(kind)} type="button">
-                <Icon size={15} /> {VIEW_LABELS[kind]}
+              <button key={databaseView.id} role="tab" aria-selected={databaseView.id === activeView.id} className={`database-tab ${databaseView.id === activeView.id ? "active" : ""}`} onClick={() => onUpdateActiveViewId(databaseView.id)} type="button" title={VIEW_LABELS[databaseView.layout]}>
+                <Icon size={15} /> {databaseView.name}
               </button>
             );
           })}
-          <button className="database-add-view" type="button" title="Adicionar visualização" onClick={() => setView("Board")}><Plus size={15} /></button>
+          <div className="database-popover-wrap">
+            <button className={`database-add-view ${viewCreateOpen ? "selected" : ""}`} type="button" title="Adicionar visualização" aria-label="Adicionar visualização" aria-expanded={viewCreateOpen} onClick={() => { setViewCreateOpen((open) => !open); setViewSettingsOpen(false); }}><Plus size={15} /></button>
+            {viewCreateOpen && <form className="database-view-create-popover" role="dialog" aria-label="Criar visualização" onSubmit={submitNewView}>
+              <strong>Nova visualização</strong>
+              <label>Nome<input value={viewName} onChange={(event) => setViewName(event.target.value)} placeholder={VIEW_LABELS[viewLayout]} aria-label="Nome da visualização" /></label>
+              <label>Layout<select value={viewLayout} onChange={(event) => setViewLayout(event.target.value as ViewKind)} aria-label="Layout da visualização">{VIEW_LAYOUTS.map((layout) => <option key={layout} value={layout}>{VIEW_LABELS[layout]}</option>)}</select></label>
+              <button className="database-new-button" type="submit"><Plus size={14} /> Criar visualização</button>
+            </form>}
+          </div>
         </div>
         <div className="database-actions">
           <label className="database-search">
             <Search size={15} />
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar na base de dados" aria-label="Buscar na base de dados" />
           </label>
-          <label className="database-filter">
-            <Filter size={15} />
-            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as TaskStatus | "Todos")} aria-label="Filtrar por status">
-              <option value="Todos">Todos os status</option>
-              {STATUS_OPTIONS.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}
-            </select>
-          </label>
-          <button className={`icon-button database-sort ${sortByDueDate ? "selected" : ""}`} type="button" title="Ordenar por prazo" onClick={() => setSortByDueDate((value) => !value)}>
-            <ArrowDownWideNarrow size={16} /><span>Ordenar</span>
-          </button>
+          <div className="database-popover-wrap">
+            <button className={`icon-button database-sort ${filterOpen || activeView.filters.length ? "selected" : ""}`} type="button" title="Filtrar esta visualização" aria-expanded={filterOpen} onClick={() => { setFilterOpen((open) => !open); setSortOpen(false); setViewSettingsOpen(false); }}>
+              <Filter size={16} /><span>Filtrar{activeView.filters.length ? ` · ${activeView.filters.length}` : ""}</span>
+            </button>
+            {filterOpen && <div className="database-filter-popover" role="dialog" aria-label="Filtros da visualização">
+              <div className="database-popover-heading"><strong>Filtros</strong><span>{activeView.filters.length} {activeView.filters.length === 1 ? "condição" : "condições"}</span></div>
+              {activeView.filters.length > 1 && <label className="database-filter-match">Mostrar páginas que correspondam a<select value={activeView.filterMatch} onChange={(event) => updateActiveView({ filterMatch: event.target.value as "AND" | "OR" })} aria-label="Lógica dos filtros"><option value="AND">todas as condições</option><option value="OR">qualquer condição</option></select></label>}
+              <div className="database-filter-rules">
+                {activeView.filters.map((filter) => {
+                  const property = filterProperties.find((candidate) => candidate.id === filter.propertyId) ?? BUILTIN_DATABASE_PROPERTIES[0];
+                  const operators = getFilterOperators(property);
+                  const operator = operators.includes(filter.operator) ? filter.operator : operators[0];
+                  return <div className="database-filter-rule" key={filter.id}>
+                    <select value={property.id} onChange={(event) => {
+                      const nextProperty = filterProperties.find((candidate) => candidate.id === event.target.value) ?? BUILTIN_DATABASE_PROPERTIES[0];
+                      updateFilter(filter.id, { propertyId: nextProperty.id, operator: getFilterOperators(nextProperty)[0], value: "" });
+                    }} aria-label="Propriedade do filtro">{filterProperties.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select>
+                    <select value={operator} onChange={(event) => updateFilter(filter.id, { operator: event.target.value as DatabaseFilterOperator })} aria-label="Operador do filtro">{operators.map((option) => <option key={option} value={option}>{FILTER_OPERATOR_LABELS[option]}</option>)}</select>
+                    {renderFilterValue({ ...filter, operator }, property)}
+                    <button type="button" className="database-filter-remove" aria-label="Remover filtro" title="Remover filtro" onClick={() => removeFilter(filter.id)}><Trash2 size={13} /></button>
+                  </div>;
+                })}
+                {activeView.filters.length === 0 && <p className="database-property-empty">Adicione uma condição para filtrar as páginas desta visualização.</p>}
+              </div>
+              <div className="database-popover-actions"><button type="button" onClick={addFilter}><Plus size={13} /> Adicionar filtro</button><button type="button" onClick={() => updateActiveView({ filters: [] })} disabled={activeView.filters.length === 0}>Limpar</button></div>
+            </div>}
+          </div>
+          <div className="database-popover-wrap">
+            <button className={`icon-button database-sort ${sortOpen || activeView.sortPropertyId ? "selected" : ""}`} type="button" title="Ordenar esta visualização" aria-expanded={sortOpen} onClick={() => { setSortOpen((open) => !open); setFilterOpen(false); setViewSettingsOpen(false); }}>
+              <ArrowDownWideNarrow size={16} /><span>Ordenar</span>
+            </button>
+            {sortOpen && <div className="database-sort-popover" role="dialog" aria-label="Ordenação da visualização">
+              <div className="database-popover-heading"><strong>Ordenar</strong><span>Configuração desta visualização</span></div>
+              <label>Propriedade<select value={activeView.sortPropertyId} onChange={(event) => updateActiveView({ sortPropertyId: event.target.value })} aria-label="Propriedade da ordenação"><option value="">Sem ordenação</option>{filterProperties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}</select></label>
+              <label>Ordem<select value={activeView.sortDirection} onChange={(event) => updateActiveView({ sortDirection: event.target.value as "Ascending" | "Descending" })} aria-label="Direção da ordenação"><option value="Ascending">Crescente</option><option value="Descending">Decrescente</option></select></label>
+            </div>}
+          </div>
+          <div className="database-popover-wrap">
+            <button className={`icon-button database-sort ${viewSettingsOpen ? "selected" : ""}`} type="button" title="Configurações da visualização" aria-expanded={viewSettingsOpen} onClick={() => { setViewSettingsOpen((open) => !open); setFilterOpen(false); setSortOpen(false); setViewCreateOpen(false); }}>
+              <Settings2 size={16} /><span>Visualização</span>
+            </button>
+            {viewSettingsOpen && <div className="database-view-settings-popover" role="dialog" aria-label="Configurações da visualização">
+              <div className="database-popover-heading"><strong>Visualização</strong><span>Preferências salvas nesta base</span></div>
+              <label>Nome<input value={activeView.name} onChange={(event) => updateActiveView({ name: event.target.value })} aria-label="Nome da visualização atual" /></label>
+              <label>Layout<select value={activeView.layout} onChange={(event) => updateActiveView({ layout: event.target.value as ViewKind })} aria-label="Layout atual">{VIEW_LAYOUTS.map((layout) => <option key={layout} value={layout}>{VIEW_LABELS[layout]}</option>)}</select></label>
+              <button className="database-view-delete" type="button" onClick={deleteActiveView} disabled={databaseViews.length <= 1}><Trash2 size={13} /> Excluir visualização</button>
+            </div>}
+          </div>
           <div className="database-property-wrap">
             <button className={`icon-button database-sort ${propertyManagerOpen ? "selected" : ""}`} type="button" title="Gerenciar propriedades" onClick={() => setPropertyManagerOpen((open) => !open)}>
               <Settings2 size={16} /><span>Propriedades</span>
@@ -596,7 +855,7 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties 
                 const outsideMonth = date.getMonth() !== calendarMonth.getMonth();
                 return <div className={`calendar-cell ${outsideMonth ? "outside-month" : ""}`} key={dateKey}>
                   <span className={date.toDateString() === new Date().toDateString() ? "calendar-today" : ""}>{date.getDate()}</span>
-                  {items.slice(0, 3).map((row) => <button key={row.id} type="button" className={`calendar-item status-${row.status.toLowerCase().replaceAll(" ", "-")}`} onClick={() => { setView("Table"); setQuery(row.title); }} title={`${row.title} · ${row.status}`}>{row.title}</button>)}
+                  {items.slice(0, 3).map((row) => <button key={row.id} type="button" className={`calendar-item status-${row.status.toLowerCase().replaceAll(" ", "-")}`} onClick={() => setQuery(row.title)} title={`${row.title} · ${row.status}`}>{row.title}</button>)}
                   {items.length > 3 && <small>+{items.length - 3} mais</small>}
                 </div>;
               })}
@@ -627,9 +886,9 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties 
                   const firstDay = visibleStart?.getDate() ?? 0;
                   const span = visibleStart && visibleEnd ? Math.max(1, Math.round((visibleEnd.getTime() - visibleStart.getTime()) / 86400000) + 1) : 1;
                   return <div className="timeline-row" key={row.id} style={{ gridTemplateColumns: timelineColumns, gridColumn: "1 / -1" }}>
-                    <button className="timeline-row-title" type="button" onClick={() => { setView("Table"); setQuery(row.title); }} title="Abrir esta página na tabela">{row.title || "Sem título"}</button>
+                    <button className="timeline-row-title" type="button" onClick={() => setQuery(row.title)} title="Buscar esta página nesta visualização">{row.title || "Sem título"}</button>
                     {Array.from({ length: daysInMonth }, (_, index) => <span className={`timeline-day-cell ${((index + new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1).getDay()) % 7 === 0 || (index + new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1).getDay()) % 7 === 6) ? "timeline-weekend" : ""}`} style={{ gridColumn: index + 2 }} key={index} />)}
-                    {intersects && <button className={`timeline-bar status-${row.status.toLowerCase().replaceAll(" ", "-")}`} style={{ gridColumn: `${firstDay + 1} / span ${span}`, gridRow: 1 }} type="button" onClick={() => { setView("Table"); setQuery(row.title); }} title={`${row.title}: ${formatDate(startValue ?? "")} – ${formatDate(endValue ?? "")}`}>{row.title}</button>}
+                    {intersects && <button className={`timeline-bar status-${row.status.toLowerCase().replaceAll(" ", "-")}`} style={{ gridColumn: `${firstDay + 1} / span ${span}`, gridRow: 1 }} type="button" onClick={() => setQuery(row.title)} title={`${row.title}: ${formatDate(startValue ?? "")} – ${formatDate(endValue ?? "")}`}>{row.title}</button>}
                   </div>;
                 })}
               </div>
@@ -638,7 +897,7 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties 
           </div>
         )}
       </div>
-      <div className="database-footer"><span>{visibleRows.length} {visibleRows.length === 1 ? "página" : "páginas"}</span><span>·</span><button type="button" onClick={() => { setQuery(""); setStatusFilter("Todos"); setSortByDueDate(false); }}>Limpar filtros</button></div>
+      <div className="database-footer"><span>{visibleRows.length} {visibleRows.length === 1 ? "página" : "páginas"}</span><span>·</span><button type="button" onClick={() => { setQuery(""); updateActiveView({ filters: [], filterMatch: "AND", sortPropertyId: "", sortDirection: "Ascending" }); }}>Limpar filtros e ordenação</button></div>
     </section>
   );
 }

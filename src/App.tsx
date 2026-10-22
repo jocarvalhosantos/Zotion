@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { BlockEditor } from "./BlockEditor";
 import { DatabaseView } from "./DatabaseView";
-import { createInitialWorkspace, formatUpdatedAt, makeId } from "./model";
+import { createDefaultDatabaseView, createInitialWorkspace, formatUpdatedAt, makeId } from "./model";
 import type { ContentBlock, Page, WorkspaceData } from "./model";
 import "./App.css";
 
@@ -140,6 +140,7 @@ function App() {
       blocks: kind === "document" ? [{ id: makeId("block"), type: "paragraph", text: "" }] : [],
       rows: kind === "database" ? [] : undefined,
       databaseProperties: kind === "database" ? [] : undefined,
+      databaseViews: kind === "database" ? [createDefaultDatabaseView()] : undefined,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -151,6 +152,12 @@ function App() {
 
   const duplicatePage = (page: Page) => {
     const id = makeId(page.kind === "database" ? "database" : "page");
+    const databaseViews = page.databaseViews?.map((view) => ({
+      ...view,
+      id: makeId("view"),
+      filters: (view.filters ?? []).map((filter) => ({ ...filter, id: makeId("filter") })),
+    }));
+    const activeViewIndex = page.databaseViews?.findIndex((view) => view.id === page.activeDatabaseViewId) ?? -1;
     const duplicate: Page = {
       ...page,
       id,
@@ -163,6 +170,8 @@ function App() {
           ? Object.fromEntries(Object.entries(row.properties).map(([key, value]) => [key, Array.isArray(value) ? [...value] : value]))
           : undefined,
       })),
+      databaseViews,
+      activeDatabaseViewId: databaseViews?.[activeViewIndex]?.id ?? databaseViews?.[0]?.id,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -307,6 +316,8 @@ function App() {
                 allPages={workspace.pages}
                 onUpdateRows={(rows) => updatePage(currentPage.id, { rows })}
                 onUpdateProperties={(databaseProperties) => updatePage(currentPage.id, { databaseProperties })}
+                onUpdateViews={(databaseViews) => updatePage(currentPage.id, { databaseViews })}
+                onUpdateActiveViewId={(activeDatabaseViewId) => updatePage(currentPage.id, { activeDatabaseViewId })}
               />
             </> : <>
               <div className="page-editor-meta"><span>{formatUpdatedAt(currentPage.updatedAt)}</span></div>

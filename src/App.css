@@ -208,13 +208,40 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .database-tab.active { color: var(--text); background: var(--hover-2); font-weight: 600; }
 .database-add-view { display: grid; width: 25px; height: 25px; place-items: center; color: var(--muted); border-radius: 4px; }
 .database-add-view:hover { background: var(--hover); color: var(--text); }
-.database-search, .database-filter { display: flex; align-items: center; height: 29px; padding: 0 8px; gap: 5px; color: var(--muted); border-radius: 5px; }
-.database-search:hover, .database-filter:hover { background: var(--hover); }
+.database-search { display: flex; align-items: center; height: 29px; padding: 0 8px; gap: 5px; color: var(--muted); border-radius: 5px; }
+.database-search:hover { background: var(--hover); }
 .database-search input { width: 125px; padding: 0; color: var(--text-soft); border: 0; outline: 0; background: transparent; font-size: 10px; }
 .database-search input::placeholder { color: var(--faint); }
-.database-filter select { max-width: 100px; padding: 0; color: var(--text-soft); border: 0; outline: 0; background: transparent; font-size: 10px; }
 .database-sort { width: auto; padding: 0 7px; gap: 5px; font-size: 10px; }
 .database-sort.selected { color: var(--accent); background: var(--accent-soft); }
+.database-popover-wrap { position: relative; }
+.database-add-view.selected { color: var(--accent); background: var(--accent-soft); }
+.database-view-create-popover, .database-filter-popover, .database-sort-popover, .database-view-settings-popover { position: absolute; top: 34px; right: 0; z-index: 35; display: grid; width: min(360px, calc(100vw - 32px)); padding: 14px; gap: 9px; border: 1px solid var(--border); border-radius: 9px; color: var(--text); background: var(--surface); box-shadow: var(--shadow); }
+.database-view-create-popover { width: min(280px, calc(100vw - 32px)); }
+.database-filter-popover { width: min(560px, calc(100vw - 32px)); }
+.database-sort-popover, .database-view-settings-popover { width: min(300px, calc(100vw - 32px)); }
+.database-view-create-popover > strong { color: var(--text); font-size: 12px; }
+.database-popover-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.database-popover-heading strong { color: var(--text); font-size: 12px; }
+.database-popover-heading span { color: var(--muted); font-size: 9px; text-align: right; }
+.database-view-create-popover label, .database-sort-popover label, .database-view-settings-popover label { display: grid; gap: 4px; color: var(--muted); font-size: 10px; }
+.database-view-create-popover input, .database-view-create-popover select, .database-sort-popover select, .database-view-settings-popover input, .database-view-settings-popover select { width: 100%; height: 29px; padding: 0 8px; color: var(--text); border: 1px solid var(--border); border-radius: 5px; outline: 0; background: var(--surface); font-size: 11px; }
+.database-view-create-popover input:focus, .database-view-create-popover select:focus, .database-sort-popover select:focus, .database-view-settings-popover input:focus, .database-view-settings-popover select:focus, .database-filter-rule input:focus, .database-filter-rule select:focus { border-color: var(--border-strong); }
+.database-view-create-popover .database-new-button { justify-self: start; margin-top: 2px; }
+.database-filter-match { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; color: var(--muted); font-size: 10px; }
+.database-filter-match select { height: 26px; padding: 0 6px; color: var(--text-soft); border: 1px solid var(--border); border-radius: 4px; outline: 0; background: var(--surface); font-size: 10px; }
+.database-filter-rules { display: grid; max-height: 240px; gap: 7px; overflow-y: auto; }
+.database-filter-rule { display: grid; grid-template-columns: minmax(92px, .9fr) minmax(115px, 1fr) minmax(90px, 1.1fr) 25px; align-items: center; gap: 5px; }
+.database-filter-rule input, .database-filter-rule select { min-width: 0; width: 100%; height: 28px; padding: 0 6px; color: var(--text-soft); border: 1px solid var(--border); border-radius: 5px; outline: 0; background: var(--surface); font-size: 10px; }
+.database-filter-remove { display: grid; width: 25px; height: 25px; place-items: center; color: var(--muted); border-radius: 4px; }
+.database-filter-remove:hover { color: var(--red); background: var(--hover); }
+.database-popover-actions { display: flex; align-items: center; justify-content: space-between; padding-top: 8px; border-top: 1px solid var(--border); }
+.database-popover-actions button { display: inline-flex; min-height: 26px; align-items: center; padding: 0 6px; gap: 4px; color: var(--text-soft); border-radius: 4px; font-size: 10px; }
+.database-popover-actions button:hover:not(:disabled) { background: var(--hover); }
+.database-popover-actions button:disabled { color: var(--faint); cursor: default; }
+.database-view-delete { display: inline-flex; align-items: center; justify-self: start; min-height: 28px; padding: 0 7px; gap: 5px; color: var(--red); border-radius: 4px; font-size: 10px; }
+.database-view-delete:hover:not(:disabled) { background: var(--hover); }
+.database-view-delete:disabled { color: var(--faint); cursor: default; }
 .database-new-button { display: inline-flex; align-items: center; justify-content: center; min-height: 29px; padding: 0 11px; gap: 5px; color: white; border-radius: 5px; background: #386a8f; font-size: 11px; font-weight: 600; transition: background .12s; }
 .database-new-button:hover { background: #2f5c7e; }
 .database-property-wrap { position: relative; }
@@ -485,9 +512,14 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .page-content { width: calc(100% - 27px); }
   .database-canvas .page-content { width: calc(100% - 22px); }
   .database-actions { gap: 1px; }
-  .database-filter { padding: 0 4px; }
-  .database-filter select { max-width: 78px; }
   .database-sort { padding: 0 5px; }
   .database-new-button { padding: 0 8px; }
   .search-dialog-footer { align-items: flex-start; flex-direction: column; justify-content: center; gap: 6px; padding: 8px 12px; }
+}
+
+@media (max-width: 540px) {
+  .database-filter-rule { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 26px; }
+  .database-filter-rule > :nth-child(3) { grid-column: 1 / 3; grid-row: 2; }
+  .database-filter-rule > :nth-child(4) { grid-column: 3; grid-row: 2; }
+  .database-filter-popover { right: auto; left: -38px; }
 }

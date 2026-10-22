@@ -2,7 +2,7 @@
 
 ## Objetivo e escopo
 
-Este estudo usa o REA (Reverse Engineer Anything), mantido por Morluto, para observar o pacote Electron instalado do Notion Desktop. O alvo foi o `app.asar` empacotado com o aplicativo; não foram extraídos dados da conta, páginas do usuário, tokens ou credenciais. A interface web do Notion redirecionou para autenticação durante a inspeção e não foi automatizada. Assim, as conclusões sobre o cliente online são limitadas à documentação pública do Notion e ao estudo público do REA.
+Este estudo usa o REA (Reverse Engineer Anything), mantido por Morluto, para observar o pacote Electron instalado do Notion Desktop e uma amostra pública dos bundles web. O alvo local foi o `app.asar` empacotado com o aplicativo; não foram extraídos dados da conta, páginas do usuário, tokens ou credenciais. A interface web exigiu autenticação para capturar os bundles completos; a aba autenticada foi observada somente por leitura da árvore de acessibilidade, sem interação. O REA não se conectou à sessão autenticada nem capturou tráfego em runtime. Assim, as conclusões sobre o cliente online também se apoiam na documentação pública do Notion e no estudo público do REA.
 
 O resultado é um mapa estático parcial e uma aplicação independente que reproduz um conjunto pequeno de padrões de interação. Não é uma implementação da API do Notion nem uma cópia integral do produto.
 
@@ -72,6 +72,18 @@ No código estático desse processo, a janela principal chama `webContents.loadU
 
 O inventário do ASAR lista componentes internos para abas, configurações, atividade, SQLite e janelas. Em `.webpack/renderer/tab_browser_view`, o único arquivo listado é `preload.js`, sem um `index.js` de interface. Isso sugere que o conteúdo principal é entregue ao contêiner de navegação em tempo de execução, mas não prova qual origem, bundle web ou endpoint foi carregado. Sem uma captura de runtime da navegação e dos recursos da aplicação, a interface autenticada, os modelos de página e as chamadas ao backend continuam fora do que este pacote permite confirmar.
 
+### Passada estática sobre o shell web publicado
+
+Em 22/10/2026, obtive sem autenticação o shell público de `https://app.notion.com/` e baixei 14 arquivos JavaScript servidos pelo mesmo domínio. Mantive o shell e os bundles fora do repositório. O snapshot dos bundles tem SHA-256 `68856928394d3bddad466165e9cceb04611ce4d56470aeaddecfac0ec80dbde2`.
+
+O Evidence REA `ev_83b838be79874ba01338daa896702971875de3d84c3c54ea611cb99e829777d2` inventariou 14 arquivos, leu 5.837.728 bytes de texto, analisou 12 arquivos JavaScript e registrou 1.125 módulos, 522.032 nós AST, 11.488 achados e zero falhas de parse. O grafo semântico ficou parcial e truncado, com 34.956 incógnitas; dois arquivos passaram do orçamento de análise semântica e um bundle de 3,7 MB excedeu o limite de fatos estáticos completos. Essa amostra representa apenas os assets referenciados pelo shell público naquele momento; não inclui todos os chunks sob demanda, dados de uma sessão autenticada ou um número de versão do produto.
+
+Para aprofundar a área de bases, analisei isoladamente `22194-625f5aaea2cefe74.js`, que no snapshot tinha 748.124 bytes. O Evidence REA `ev_98e45834dec295d79482246336a6d2ba0a7ebba9f13cfe3f79d244b1e41fb2aa` registrou 201.876 nós AST, 332 módulos, 5.119 achados e zero falhas de parse. A saída preservou 20.000 nós semânticos, 8.418 relações e 20.000 incógnitas, mas atingiu o teto por arquivo e permaneceu parcial e truncada.
+
+Nesse bundle, o REA reteve referências a `rollupPropertySchema`, `rollup_type`, `rollupType` e `collectionFeatureGates/rollup_empty_value_filter`. Os registros classificam leituras de alguns desses campos como desconhecidas porque o receptor não foi resolvido; portanto, são referências e caminhos candidatos, não prova de estado padrão ou execução. A leitura estática do trecho também expõe campos relacionados a propriedade de pessoa, propriedade-alvo e agregação. Isso reforça a decisão de manter os rollups locais explicitamente tipados, mas não permite afirmar compatibilidade com a implementação interna do Notion.
+
+O Chrome do usuário estava aberto no Notion, mas não expunha um endpoint local CDP em `9222` ou `9223`; por isso, o REA CLI não conseguiu capturar os scripts da página autenticada. Não tentei abrir outra sessão de depuração nem reutilizar cookies. A observação da árvore de acessibilidade da página autenticada segue limitada aos controles visíveis descritos abaixo; não houve captura de rede nem execução de cenários.
+
 ## Cobertura nesta etapa
 
 | Frente investigada | Estado | Evidência e limite |
@@ -81,6 +93,7 @@ O inventário do ASAR lista componentes internos para abas, configurações, ati
 | API exposta pelo preload | Respondida parcialmente | `__electronApi` lista 232 membros; o traço de `navigateToBlock` encontrou o nome, mas nenhum caminho de chamada. O status dinâmico e o comportamento em execução continuam desconhecidos. |
 | Processo principal e IPC | Respondida parcialmente | Um canal literal tem transmissão e listener pareados; sete operações têm canal dinâmico e o grafo semântico tem incógnitas. |
 | Carregamento do conteúdo principal no desktop | Respondida parcialmente | `initialUrl` e `getInitialBaseUrl()` são usados para carregar conteúdo em `webContents`; a origem e os recursos carregados não foram resolvidos em runtime. Evidence `ev_96f1d1d4824142ea4eeb6dab14bed0abf69cf31e3d51d40facae2064ae1886bb`. |
+| Shell e bundles públicos da interface web | Respondida parcialmente | 14 scripts do shell público foram inventariados; REA analisou 12 e reteve referências estáticas a campos de rollup. Os chunks sob demanda, a versão exata, os receptores de propriedades desconhecidos e o comportamento em runtime continuam sem confirmação. Evidence `ev_83b838be79874ba01338daa896702971875de3d84c3c54ea611cb99e829777d2`; foco em bases `ev_98e45834dec295d79482246336a6d2ba0a7ebba9f13cfe3f79d244b1e41fb2aa`. |
 | Serviço SQLite do desktop | Respondida parcialmente | Evidence `ev_aaec5886b5fb14bfc6e3ef3cfb80f7c425d3849fe2d8c8dfdbcf1d01555a7a0f` cobre `.webpack/main/SqliteServer.js` e uma referência a `better-sqlite3`; o esquema e a finalidade dos dados não foram estabelecidos. O addon nativo com metadados de integridade contraditórios não sustenta conclusões. |
 | Interface visual | Respondida parcialmente | Uma captura da janela aberta mostrou navegação lateral, busca, ações de página e áreas de conteúdo; é uma observação de uma tela, sem verificar os fluxos desses controles. |
 | Fluxos de páginas, blocos e bases de dados do produto | Não respondida pelo binário selecionado | A aplicação implementa um subconjunto guiado pela documentação pública; não houve análise focada dos módulos de interface web que implementam esses fluxos. |
@@ -121,9 +134,9 @@ flowchart LR
 
 ## Escopo implementado e lacunas
 
-Implementado nesta versão: navegação hierárquica, favoritos, edição e cópia/colagem de blocos, comandos `/` e atalhos Markdown para blocos, tarefas com checkbox, bases com sete vistas (incluindo gráficos locais de barras e rosca), propriedades personalizáveis de tipos básicos, relações locais de uma via, rollups calculados entre bases, busca local, filtro/ordenação, tema claro/escuro e backup JSON.
+Implementado nesta versão: navegação hierárquica, favoritos, edição e cópia/colagem de blocos, comandos `/` e atalhos Markdown para blocos, tarefas com checkbox, bases com sete vistas (incluindo gráficos locais de barras e rosca), propriedades personalizáveis de tipos básicos, relações locais de uma via, rollups calculados entre bases, busca local, vistas nomeadas com layout, filtros planos AND/OR e uma ordenação por vista, tema claro/escuro e backup JSON.
 
-Fora do escopo: seleção/cópia estruturada de vários blocos, persistência do clipboard estruturado entre sessões, login, sincronização, colaboração em tempo real, permissões, comentários, integrações, API do Notion, anexos, propriedades automáticas, fórmulas, relações inversas, filtros combinados, vistas salvas com configurações próprias, gráficos de linha, formulários e paridade visual/comportamental completa. Não há serviço de backend; perfis de navegador não compartilham dados.
+Fora do escopo: seleção/cópia estruturada de vários blocos, persistência do clipboard estruturado entre sessões, login, sincronização, colaboração em tempo real, permissões, comentários, integrações, API do Notion, anexos, propriedades automáticas, fórmulas, relações inversas, grupos de filtros aninhados, várias ordenações simultâneas, gráficos de linha, formulários e paridade visual/comportamental completa. Não há serviço de backend; perfis de navegador não compartilham dados.
 
 ## Referências
 

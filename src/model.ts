@@ -55,6 +55,36 @@ export type RollupFunction =
   | "Latest date"
   | "Date range";
 
+export type DatabaseViewLayout = "Table" | "Board" | "List" | "Calendar" | "Gallery" | "Timeline" | "Chart";
+export type DatabaseFilterOperator =
+  | "is"
+  | "is-not"
+  | "contains"
+  | "does-not-contain"
+  | "is-empty"
+  | "is-not-empty"
+  | "greater-than"
+  | "less-than"
+  | "on-or-before"
+  | "on-or-after";
+
+export interface DatabaseFilterRule {
+  id: string;
+  propertyId: string;
+  operator: DatabaseFilterOperator;
+  value: string;
+}
+
+export interface DatabaseViewSettings {
+  id: string;
+  name: string;
+  layout: DatabaseViewLayout;
+  filters: DatabaseFilterRule[];
+  filterMatch: "AND" | "OR";
+  sortPropertyId: string;
+  sortDirection: "Ascending" | "Descending";
+}
+
 export type DatabasePropertyValue = string | number | boolean | string[] | null;
 
 export interface DatabaseProperty {
@@ -89,6 +119,8 @@ export interface Page {
   blocks: ContentBlock[];
   rows?: DatabaseRow[];
   databaseProperties?: DatabaseProperty[];
+  databaseViews?: DatabaseViewSettings[];
+  activeDatabaseViewId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -274,6 +306,18 @@ export function createInitialWorkspace(): WorkspaceData {
 
 export function makeId(prefix = "item"): string {
   return `${prefix}-${crypto.randomUUID()}`;
+}
+
+export function createDefaultDatabaseView(): DatabaseViewSettings {
+  return {
+    id: "view-table-default",
+    name: "Tabela",
+    layout: "Table",
+    filters: [],
+    filterMatch: "AND",
+    sortPropertyId: "",
+    sortDirection: "Ascending",
+  };
 }
 
 export function formatUpdatedAt(value: string): string {
