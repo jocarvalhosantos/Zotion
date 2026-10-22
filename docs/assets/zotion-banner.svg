@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="400" viewBox="0 0 1280 400" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Zotion — Um REA do Notion</title>
+  <desc id="desc">Páginas, projetos e reuniões. Uma reconstrução web independente com código próprio e investigação com REA.</desc>
+  <rect width="1280" height="400" rx="24" fill="#121E2A"/>
+  <path d="M820 0H1280V400H1000L820 0Z" fill="#1A2C3C"/>
+  <circle cx="1140" cy="54" r="140" stroke="#304858" stroke-width="1"/>
+  <circle cx="1140" cy="54" r="210" stroke="#304858" stroke-width="1"/>
+  <rect x="68" y="72" width="76" height="76" rx="18" fill="#D5EEA4"/>
+  <path d="M88 94H124V102L98 126H125V134H87V126L113 102H88V94Z" fill="#142330"/>
+  <text x="166" y="103" fill="#D5EEA4" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" letter-spacing="3">INVESTIGAR. RECONSTRUIR. CRIAR.</text>
+  <text x="66" y="240" fill="#FFFFFF" font-family="Georgia, 'Times New Roman', serif" font-size="100" font-weight="700" letter-spacing="-4">Zotion</text>
+  <text x="71" y="284" fill="#D5EEA4" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="600">Um REA do Notion.</text>
+  <text x="72" y="336" fill="#B6C5D0" font-family="Arial, Helvetica, sans-serif" font-size="18">Páginas, projetos e reuniões em um só lugar.</text>
+  <g transform="translate(888 125) rotate(-7)">
+    <rect x="8" y="10" width="268" height="188" rx="14" fill="#0C151E"/>
+    <rect width="268" height="188" rx="14" fill="#F6F7F2"/>
+    <rect x="22" y="22" width="38" height="38" rx="10" fill="#D5EEA4"/>
+    <path d="M33 34H50V38L38 49H50V53H32V49L44 38H33V34Z" fill="#142330"/>
+    <rect x="74" y="31" width="136" height="10" rx="5" fill="#233949"/>
+    <rect x="74" y="49" width="93" height="6" rx="3" fill="#B1BEC2"/>
+    <rect x="22" y="82" width="224" height="1" fill="#DBE1DC"/>
+    <rect x="22" y="101" width="65" height="61" rx="8" fill="#E4EAD7"/>
+    <rect x="101" y="101" width="65" height="61" rx="8" fill="#E3EAF0"/>
+    <rect x="180" y="101" width="65" height="61" rx="8" fill="#EAE2D8"/>
+    <path d="M36 120H72M36 129H63M115 120H151M115 129H142M194 120H230M194 129H221" stroke="#71868A" stroke-width="3" stroke-linecap="round"/>
+  </g>
+</svg>
