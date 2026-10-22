@@ -91,6 +91,12 @@ O inventário do ASAR lista componentes internos para abas, configurações, ati
 
 Separada das evidências REA, a leitura visual da janela desktop aberta mostrou um padrão de navegação com busca global, página inicial, notificações e páginas na barra lateral. A página visível tinha ações de compartilhar, copiar link, favoritar e abrir menu, além de controles de capa e comentários acima do conteúdo. Isso orienta a composição da interface web independente, mas não confirma comportamento interno ou paridade com outras páginas e configurações.
 
+### Observação da interface web autenticada
+
+Em 22/10/2026, li a árvore de acessibilidade da aba autenticada do Notion no navegador, sem clicar, editar ou enviar alterações. Essa observação complementa a análise do pacote desktop: a interface web expõe navegação lateral com busca, caixa de entrada e áreas de navegação; ações de página para compartilhar, copiar link, favoritar e abrir opções; e uma base incorporada com abas de visualização, controles de filtro e ordenação, busca, configurações, automações, preenchimento por IA, abertura em página inteira e criação de linhas. A página também compõe blocos de texto, títulos, chamadas em destaque e links.
+
+Esses são controles disponíveis na tela observada, não prova do funcionamento de cada ação. A observação ficou restrita a uma página e uma visualização; não foram exercitados filtros, edição, permissões, automações, IA, sincronização ou chamadas de rede. Nenhum título, conteúdo, identificador ou dado da conta foi levado para o código ou para este relatório. A reconstrução continua local-first e não consulta a conta Notion.
+
 ## Modelo de produto adotado
 
 O pacote desktop é uma camada Electron com janelas e comunicação entre processos. Isso, por si só, não descreve os serviços web, a persistência remota ou os protocolos internos do Notion. Para as partes visíveis ao usuário, o estudo foi combinado com a documentação oficial:
