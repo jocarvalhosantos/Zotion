@@ -10,6 +10,10 @@ export type BlockType =
   | "callout"
   | "code"
   | "meeting"
+  | "toggle"
+  | "image"
+  | "bookmark"
+  | "pageLink"
   | "divider";
 
 export interface MeetingActionItem {
@@ -34,6 +38,13 @@ export interface ContentBlock {
   checked?: boolean;
   groupId?: string;
   meeting?: MeetingNotesData;
+  details?: string;
+  imageData?: string;
+  caption?: string;
+  url?: string;
+  targetPageId?: string;
+  color?: string;
+  background?: string;
 }
 
 export type TaskStatus = "Not started" | "In progress" | "Done";
@@ -156,6 +167,16 @@ export interface DatabaseRow {
   properties?: Record<string, DatabasePropertyValue>;
 }
 
+export interface PageComment {
+  id: string;
+  text: string;
+  author: string;
+  createdAt: string;
+  updatedAt?: string;
+  resolved?: boolean;
+  parentId?: string;
+}
+
 export interface Page {
   id: string;
   title: string;
@@ -169,6 +190,18 @@ export interface Page {
   activeDatabaseViewId?: string;
   createdAt: string;
   updatedAt: string;
+  teamspaceId?: string | null;
+  cover?: string;
+  font?: "default" | "serif" | "mono";
+  fullWidth?: boolean;
+  smallText?: boolean;
+  locked?: boolean;
+  showOutline?: boolean;
+  comments?: PageComment[];
+  deletedAt?: string;
+  deletionGroupId?: string;
+  archivedAt?: string;
+  archiveGroupId?: string;
 }
 
 export interface WorkspaceData {

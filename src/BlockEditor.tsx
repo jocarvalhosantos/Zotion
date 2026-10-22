@@ -1,15 +1,18 @@
-import { useCallback, useState } from "react";
-import type { ClipboardEvent, MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, useEffect, useState } from "react";
+import type { ClipboardEvent, CSSProperties, MouseEvent as ReactMouseEvent } from "react";
 import { ArrowDown, ArrowUp, Copy, GripVertical, Plus, Trash2, X } from "lucide-react";
 import { makeId } from "./model";
-import type { ContentBlock, BlockType } from "./model";
+import type { ContentBlock, BlockType, Page } from "./model";
 import { createEmptyMeetingData } from "./model";
 import { MeetingNotesBlock } from "./MeetingNotesBlock";
 import { deleteMeetingAudioForBlock, listMeetingAudioSegments } from "./meetingAudioStore";
+import { BlockColorMenu, BookmarkBlock, ImageBlock, PageLinkBlock, ToggleBlock } from "./EditorExtensions";
 
 interface BlockEditorProps {
   blocks: ContentBlock[];
   onChange: (blocks: ContentBlock[]) => void;
+  pages?: Page[];
+  onNavigate?: (id: string) => void;
 }
 
 interface BlockCommand {
@@ -27,17 +30,37 @@ const COMMANDS: BlockCommand[] = [
   { label: "Lista com marcadores", shortcut: "bullet", description: "Crie uma lista com marcadores.", type: "bulleted" },
   { label: "Lista numerada", shortcut: "numbered", description: "Crie uma lista numerada.", type: "numbered" },
   { label: "Lista de tarefas", shortcut: "todo", description: "Acompanhe uma tarefa com uma caixa de seleção.", type: "todo" },
+  { label: "Lista recolhível", shortcut: "toggle", description: "Organize detalhes que podem ser expandidos ou recolhidos.", type: "toggle" },
   { label: "Citação", shortcut: "quote", description: "Adicione uma citação ou destaque.", type: "quote" },
   { label: "Destaque", shortcut: "callout", description: "Realce uma anotação útil.", type: "callout" },
   { label: "Código", shortcut: "code", description: "Adicione um bloco de código.", type: "code" },
   { label: "Gravação de reunião", shortcut: "meet", description: "Prepare a pauta, grave o microfone e registre ações localmente.", type: "meeting" },
+  { label: "Imagem", shortcut: "image", description: "Envie uma imagem local de até 512 KB e adicione uma legenda.", type: "image" },
+  { label: "Favorito da web", shortcut: "bookmark", description: "Guarde um endereço da web em um cartão.", type: "bookmark" },
+  { label: "Link para página", shortcut: "link", description: "Vincule e abra outra página deste workspace.", type: "pageLink" },
   { label: "Divisor", shortcut: "divider", description: "Separe seções com uma linha.", type: "divider" },
 ];
 
 const richBlockClipboard = new Map<string, ContentBlock[]>();
+const BLOCK_COLOR_IDS = new Set(["gray", "brown", "orange", "yellow", "green", "blue", "purple", "pink", "red"]);
+
+function isBlockColor(value: string | undefined): boolean {
+  return Boolean(value && BLOCK_COLOR_IDS.has(value));
+}
+
+function blockColorStyle(block: ContentBlock): CSSProperties {
+  return {
+    ...(isBlockColor(block.color) ? { "--block-text-color": `var(--editor-color-${block.color})` } : {}),
+    ...(isBlockColor(block.background) ? { "--block-background-color": `var(--editor-background-${block.background})` } : {}),
+  } as CSSProperties;
+}
 
 function escapeHtml(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+}
+
+function normalizeCommandSearch(value: string): string {
+  return value.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
 function markdownShortcutType(text: string): BlockType | undefined {
@@ -48,6 +71,7 @@ function markdownShortcutType(text: string): BlockType | undefined {
   if (text === "1. ") return "numbered";
   if (text === "[]" || text === "[] ") return "todo";
   if (text === '" ') return "quote";
+  if (text === "> ") return "toggle";
   if (text === "---") return "divider";
   return undefined;
 }
@@ -79,7 +103,14 @@ function moveSelectedBlocks(blocks: ContentBlock[], selectedIds: string[], step:
   return next;
 }
 
-export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
+function blockPlainText(block: ContentBlock): string {
+  if (block.type === "toggle") return [block.text, block.details].filter(Boolean).join("\n");
+  if (block.type === "image") return block.caption || block.text || "Imagem";
+  if (block.type === "bookmark") return [block.text, block.url].filter(Boolean).join("\n");
+  return block.text;
+}
+
+export function BlockEditor({ blocks, onChange, pages = [], onNavigate }: BlockEditorProps) {
   const [slashBlockId, setSlashBlockId] = useState<string | null>(null);
   const [slashIndex, setSlashIndex] = useState(0);
   const [menuBlockId, setMenuBlockId] = useState<string | null>(null);
@@ -89,6 +120,11 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
   const [selectionCursorId, setSelectionCursorId] = useState<string | null>(null);
   const [busyMeetingIds, setBusyMeetingIds] = useState<string[]>([]);
   const selectedBlockSet = new Set(selectedBlockIds);
+  const activeSlashQuery = blocks.find((block) => block.id === slashBlockId)?.text;
+
+  useEffect(() => {
+    if (slashBlockId) document.getElementById(`slash-option-${slashBlockId}-${slashIndex}`)?.scrollIntoView({ block: "nearest" });
+  }, [slashBlockId, slashIndex, activeSlashQuery]);
 
   const handleRecorderBusyChange = useCallback((blockId: string, busy: boolean) => {
     setBusyMeetingIds((current) => busy
@@ -167,14 +203,14 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
 
   const focusBlock = (id: string, cursor?: number) => {
     requestAnimationFrame(() => {
-      const input = document.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[data-block-id="${id}"]`);
+      const input = document.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[data-block-id="${CSS.escape(id)}"]`);
       input?.focus();
-      if (cursor !== undefined) input?.setSelectionRange(cursor, cursor);
+      if (cursor !== undefined && input && (input instanceof HTMLTextAreaElement || ["text", "search", "url"].includes(input.type))) input.setSelectionRange(cursor, cursor);
     });
   };
 
   const applyCommand = (blockId: string, command: BlockCommand) => {
-    updateBlock(blockId, { type: command.type, text: "", checked: false, meeting: command.type === "meeting" ? createEmptyMeetingData() : undefined });
+    updateBlock(blockId, { type: command.type, text: "", checked: false, meeting: command.type === "meeting" ? createEmptyMeetingData() : undefined, details: undefined, imageData: undefined, caption: undefined, url: undefined, targetPageId: undefined });
     setSlashBlockId(null);
     setSlashIndex(0);
     setMenuBlockId(null);
@@ -201,7 +237,7 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
       return;
     }
     if (blocks.length === 1) {
-      updateBlock(blocks[0].id, { type: "paragraph", text: "", checked: false });
+      updateBlock(blocks[0].id, { type: "paragraph", text: "", checked: false, details: undefined, imageData: undefined, caption: undefined, url: undefined, targetPageId: undefined });
       setMenuBlockId(null);
       focusBlock(blocks[0].id, 0);
       return;
@@ -233,18 +269,18 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
   };
 
   const clipboardHtml = (copyId: string, copiedBlocks: ContentBlock[]) =>
-    `${copiedBlocks.map((block) => `<p>${escapeHtml(block.text).replaceAll("\n", "<br>")}</p>`).join("")}<!-- workspace-lab:${copyId} -->`;
+    `${copiedBlocks.map((block) => `<p>${escapeHtml(blockPlainText(block)).replaceAll("\n", "<br>")}</p>`).join("")}<!-- workspace-lab:${copyId} -->`;
 
   const setRichClipboardData = (clipboardData: DataTransfer, copiedBlocks: ContentBlock[]) => {
     const copyId = rememberCopiedBlocks(copiedBlocks);
-    clipboardData.setData("text/plain", copiedBlocks.map((block) => block.text).join("\n"));
+    clipboardData.setData("text/plain", copiedBlocks.map(blockPlainText).join("\n"));
     clipboardData.setData("text/html", clipboardHtml(copyId, copiedBlocks));
   };
 
   const copyBlocks = async (copiedBlocks: ContentBlock[]) => {
     if (!copiedBlocks.length) return;
     const copyId = rememberCopiedBlocks(copiedBlocks);
-    const text = copiedBlocks.map((block) => block.text).join("\n");
+    const text = copiedBlocks.map(blockPlainText).join("\n");
     try {
       if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") throw new Error("Rich clipboard unavailable");
       await navigator.clipboard.write([new ClipboardItem({
@@ -401,6 +437,11 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
     }
   };
 
+  const numberedPositions = blocks.reduce<number[]>((positions, block, index) => {
+    positions.push(block.type === "numbered" ? (positions[index - 1] ?? 0) + 1 : 0);
+    return positions;
+  }, []);
+
   return (
     <div className="block-editor" onClick={() => setMenuBlockId(null)}>
       {selectedContentBlocks.length > 0 && (
@@ -420,15 +461,17 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
         const groupClassName = block.groupId
           ? ` is-block-grouped${index === 0 || blocks[index - 1].groupId !== block.groupId ? " is-block-group-start" : ""}${index === blocks.length - 1 || blocks[index + 1].groupId !== block.groupId ? " is-block-group-end" : ""}`
           : "";
-        const query = block.text.startsWith("/") ? block.text.slice(1).toLowerCase().trim() : "";
+        const query = block.text.startsWith("/") ? normalizeCommandSearch(block.text.slice(1).trim()) : "";
         const matches = query
-          ? COMMANDS.filter((command) => `${command.label} ${command.shortcut}`.toLowerCase().includes(query))
+          ? COMMANDS.filter((command) => normalizeCommandSearch(`${command.label} ${command.shortcut} ${command.type}`).includes(query))
           : COMMANDS;
-        const showSlashMenu = slashBlockId === block.id && matches.length > 0;
+        const slashMenuOpen = slashBlockId === block.id;
+        const showSlashMenu = slashMenuOpen && matches.length > 0;
 
         return (
           <div
-            className={`block-row block-${block.type}${groupClassName} ${selectedBlockSet.has(block.id) ? "is-block-selected" : ""}`}
+            className={`block-row block-${block.type}${groupClassName}${isBlockColor(block.color) ? " has-block-text-color" : ""}${isBlockColor(block.background) ? " has-block-background" : ""} ${selectedBlockSet.has(block.id) ? "is-block-selected" : ""}`}
+            style={blockColorStyle(block)}
             key={block.id}
             aria-selected={selectedBlockSet.has(block.id)}
             onMouseDown={(event) => handleBlockMouseDown(event, block.id)}
@@ -450,6 +493,7 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
                   <button type="button" onClick={() => { onChange(moveBlock(blocks, index, -1)); setMenuBlockId(null); }} disabled={index === 0}><ArrowUp size={14} /> Mover para cima</button>
                   <button type="button" onClick={() => { onChange(moveBlock(blocks, index, 1)); setMenuBlockId(null); }} disabled={index === blocks.length - 1}><ArrowDown size={14} /> Mover para baixo</button>
                   <button className="danger-action" type="button" onClick={() => deleteBlock(index)}><Trash2 size={14} /> Excluir</button>
+                  <BlockColorMenu block={block} onChange={(update) => updateBlock(block.id, update)} />
                 </div>
               )}
             </div>
@@ -460,6 +504,14 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
                 onChange={(update) => updateBlock(block.id, update)}
                 onRecorderBusyChange={handleRecorderBusyChange}
               />
+            ) : block.type === "toggle" ? (
+              <ToggleBlock block={block} onChange={(update) => updateBlock(block.id, update)} onInsertAfter={() => insertAfter(index)} />
+            ) : block.type === "image" ? (
+              <ImageBlock block={block} onChange={(update) => updateBlock(block.id, update)} onInsertAfter={() => insertAfter(index)} />
+            ) : block.type === "bookmark" ? (
+              <BookmarkBlock block={block} onChange={(update) => updateBlock(block.id, update)} onInsertAfter={() => insertAfter(index)} />
+            ) : block.type === "pageLink" ? (
+              <PageLinkBlock block={block} onChange={(update) => updateBlock(block.id, update)} onInsertAfter={() => insertAfter(index)} pages={pages} onNavigate={onNavigate} />
             ) : block.type === "divider" ? (
               <button className="divider-block" type="button" aria-label="Divisor. Pressione Enter para adicionar um bloco abaixo." onClick={() => insertAfter(index)}><span /></button>
             ) : (
@@ -475,12 +527,14 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
                   </button>
                 )}
                 {block.type === "bulleted" && <span className="list-marker bullet-marker" aria-hidden="true">•</span>}
-                {block.type === "numbered" && <span className="list-marker number-marker" aria-hidden="true">{index + 1}.</span>}
+                {block.type === "numbered" && <span className="list-marker number-marker" aria-hidden="true">{numberedPositions[index]}.</span>}
                 {block.type === "callout" && <span className="callout-marker" aria-hidden="true">✦</span>}
                 <textarea
                   className="block-input"
                   data-block-id={block.id}
                   aria-label={`Bloco ${block.type.replace("heading", "título ")}`}
+                  aria-controls={slashMenuOpen ? `slash-menu-${block.id}` : undefined}
+                  aria-activedescendant={showSlashMenu ? `slash-option-${block.id}-${Math.min(slashIndex, matches.length - 1)}` : undefined}
                   rows={Math.max(1, block.text.split("\n").length)}
                   value={block.text}
                   spellCheck
@@ -516,7 +570,8 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
                   }}
                   onPaste={(event) => pasteBlock(event, block, index)}
                   onKeyDown={(event) => {
-                    if (showSlashMenu && event.key === "Escape") {
+                    if (slashMenuOpen && event.key === "Escape") {
+                      event.preventDefault();
                       setSlashBlockId(null);
                       return;
                     }
@@ -598,8 +653,16 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
                       const end = target.selectionEnd;
                       const before = block.text.slice(0, start);
                       const after = block.text.slice(end);
-                      updateBlock(block.id, { text: before });
-                      insertAfter(index, after, block.type === "divider" ? "paragraph" : block.type);
+                      if (!block.text && ["numbered", "bulleted", "todo"].includes(block.type)) {
+                        updateBlock(block.id, { type: "paragraph", checked: false });
+                        return;
+                      }
+                      const nextBlock: ContentBlock = { id: makeId("block"), type: block.type, text: after, checked: false, color: block.color, background: block.background };
+                      const next = [...blocks];
+                      next.splice(index, 1, { ...block, text: before }, nextBlock);
+                      onChange(next);
+                      setSlashBlockId(null);
+                      focusBlock(nextBlock.id, 0);
                       return;
                     }
                     if (event.key === "Backspace" && block.text.length === 0 && blocks.length > 1) {
@@ -609,20 +672,22 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
                   }}
                 />
                 {block.type === "todo" && block.checked && <span className="completed-sr-only">Concluída</span>}
-                {showSlashMenu && (
-                  <div className="slash-menu" role="listbox" aria-label="Inserir um bloco" onMouseDown={(event) => event.preventDefault()}>
-                    <div className="slash-menu-label">BLOCOS BÁSICOS</div>
-                    {matches.slice(0, 7).map((command, commandIndex) => (
+                {slashMenuOpen && (
+                  <div className="slash-menu" id={`slash-menu-${block.id}`} role="listbox" aria-label="Inserir um bloco" onMouseDown={(event) => event.preventDefault()}>
+                    <div className="slash-menu-label">TODOS OS BLOCOS · {matches.length} {matches.length === 1 ? "COMANDO" : "COMANDOS"}</div>
+                    {!matches.length && <div className="slash-menu-empty">Nenhum comando encontrado. Tente /image, /toggle, /bookmark, /link ou /meet.</div>}
+                    {matches.map((command, commandIndex) => (
                       <button
                         type="button"
                         role="option"
+                        id={`slash-option-${block.id}-${commandIndex}`}
                         aria-selected={slashIndex === commandIndex}
                         className={slashIndex === commandIndex ? "selected" : ""}
                         key={command.shortcut}
                         onMouseEnter={() => setSlashIndex(commandIndex)}
                         onClick={() => applyCommand(block.id, command)}
                       >
-                        <span className={`command-icon command-${command.type}`}>{command.type === "todo" ? "☐" : command.type === "divider" ? "—" : command.type.startsWith("heading") ? "T" : command.type === "quote" ? "“" : command.type === "code" ? "</>" : command.type === "bulleted" ? "•" : command.type === "numbered" ? "1." : command.type === "callout" ? "✦" : "¶"}</span>
+                        <span className={`command-icon command-${command.type}`}>{command.type === "todo" ? "☐" : command.type === "divider" ? "—" : command.type.startsWith("heading") ? "T" : command.type === "quote" ? "“" : command.type === "code" ? "</>" : command.type === "bulleted" ? "•" : command.type === "numbered" ? "1." : command.type === "callout" ? "✦" : command.type === "toggle" ? "▸" : command.type === "image" ? "▧" : command.type === "bookmark" ? "↗" : command.type === "pageLink" ? "↪" : command.type === "meeting" ? "◉" : "¶"}</span>
                         <span><strong>{command.label}</strong><small>{command.description}</small></span>
                         <kbd>/{command.shortcut}</kbd>
                       </button>

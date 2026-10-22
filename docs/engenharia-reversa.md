@@ -194,7 +194,7 @@ flowchart LR
   W --> D[Vistas de base de dados]
   W --> S[Busca e navegação]
   E --> L[(localStorage do navegador)]
-  E --> I[(IndexedDB: áudios de reunião)]
+  E --> I[(IndexedDB: áudios e versões de páginas)]
   D --> L
   S --> L
   C[Coolify: container Nginx] -->|arquivos estáticos| W
@@ -202,9 +202,23 @@ flowchart LR
 
 ## Escopo implementado e lacunas
 
+### Ampliação: workspaces e organização
+
+Esta entrega acrescenta uma biblioteca de workspaces locais isolados, configuração por espaço, perfil local para autoria de comentários, áreas de organização arquiváveis, início com recentes e galeria de sete modelos originais e modelos personalizados. A migração do formato `workspace-lab-v1` conserva os IDs de páginas e blocos, essenciais aos áudios existentes, e mantém a chave antiga. O catálogo novo usa `workspace-lab-library-v2`; dados corrompidos exibem uma tela de recuperação e não são substituídos automaticamente.
+
+Páginas e subpáginas podem ser movidas, duplicadas, arquivadas ou enviadas à lixeira. A restauração respeita grupos de exclusão para não restaurar automaticamente uma subpágina que já estava apagada antes da árvore. A exclusão definitiva exige confirmação e remove conteúdo, versões e áudios associados. A transferência entre workspaces conserva IDs e leva o histórico; relações ou links externos à árvore impedem a transferência até que sejam resolvidos. A duplicação, os modelos e a importação recebem IDs novos e não copiam arquivos de áudio.
+
+O histórico salva snapshots antes de editar, com intervalo mínimo de 60 segundos por página, e permite salvar manualmente. Mantém até 20 versões por página em IndexedDB. Restaurar salva primeiro o estado atual; posição na árvore, área, comentários e estado de lixeira/arquivo atuais são preservados. Os snapshots contêm notas de reunião, mas não arquivos de áudio. Alterar ou restaurar texto não recupera uma gravação que foi excluída.
+
+Comentários locais permitem respostas, edição, exclusão confirmada, resolução e reabertura. O nome do perfil é apenas um rótulo local; não existe envio, notificação ou autenticação. Aparência por página inclui seis capas em degradê, fonte, largura, tamanho do texto, sumário e bloqueio contra edição acidental. O editor ganhou blocos recolhíveis de texto, imagens locais limitadas a 512 KiB, cartões de links HTTP(S), links para páginas, referências de retorno e cores de texto/fundo.
+
+Há exportação de páginas em Markdown e importação simples de Markdown/texto. Backup JSON pode conter um workspace ou todo o catálogo; importar adiciona cópias novas sem substituir os espaços existentes e remapeia referências internas. O JSON inclui imagens e comentários, mas não histórico ou áudio. As áreas não têm membros nem controles efetivos de acesso, e links locais não publicam conteúdo para outra pessoa ou navegador.
+
+Essas funcionalidades são implementações próprias guiadas pela documentação pública. O novo traço REA identifica o membro `workspaceSwitcher`, mas não resolve o fluxo interno. Evidências, perguntas abertas e referências estão em [workspace-investigation.md](workspace-investigation.md). Não foi recuperado o protocolo interno de workspaces, permissões, versões ou colaboração.
+
 Implementado nesta versão: navegação hierárquica, favoritos, edição e seleção múltipla de blocos, cópia/recorte/colagem estruturada na sessão atual, duplicação, exclusão, reordenação em lote e agrupamento/desagrupamento visual de blocos contíguos, comandos `/` incluindo `/meet`, atalho para criar reunião e atalhos Markdown para blocos, tarefas com checkbox, notas e gravação local de reuniões pelo microfone, reprodução/download/exclusão de trechos, pauta, participantes, transcrição editável, resumo heurístico e ações com responsáveis, bases com oito vistas (incluindo gráficos locais de barras e rosca e formulários locais), perguntas de formulário configuráveis com validação obrigatória e confirmação, propriedades personalizáveis de tipos básicos, fórmulas com referências `prop("Nome")`, operadores aritméticos/lógicos, comparações, ternário e funções comuns, relações locais de uma via, rollups calculados entre bases, busca local, vistas nomeadas com layout, filtros AND/OR com grupos aninháveis até três níveis, várias ordenações sequenciais por vista e agrupamento e subagrupamento de linhas na Tabela, tema claro/escuro e backup JSON.
 
-Fora do escopo: persistência do clipboard estruturado entre sessões, login, sincronização, colaboração em tempo real, permissões, comentários, integrações, API do Notion, anexos, propriedades automáticas, linguagem completa de fórmulas do Notion e operações avançadas de listas/relações, relações inversas, agrupamento fora da Tabela, reordenação manual das opções de seleção depois de criadas, publicação de formulários para acesso externo, coleta compartilhada de respostas, transcrição automática, identificação de falantes, captura de áudio do sistema, integração com calendário, envio de áudio a serviços de IA, feeds, mapas, dashboards, gráficos de linha e paridade visual/comportamental completa. Não há serviço de backend; perfis de navegador não compartilham dados.
+Lacunas restantes: persistência do clipboard estruturado entre sessões, login, sincronização, colaboração em tempo real, membros, convites e permissões, comentários compartilhados/notificações, integrações, API do Notion, anexos gerais além das imagens locais, propriedades automáticas, linguagem completa de fórmulas do Notion e operações avançadas de listas/relações, relações inversas, agrupamento fora da Tabela, reordenação manual das opções de seleção depois de criadas, modelos recorrentes de bases, publicação de formulários para acesso externo, coleta compartilhada de respostas, transcrição automática, identificação de falantes, captura de áudio do sistema, integração com calendário, envio de áudio a serviços de IA, feeds, mapas, dashboards, gráficos de linha e paridade visual/comportamental completa. Não há serviço de backend; perfis de navegador não compartilham dados.
 
 ## Referências
 
