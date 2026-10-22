@@ -43,7 +43,14 @@ function loadWorkspace(): WorkspaceData {
 function getPageContent(page: Page): string {
   return [
     ...page.blocks.map((block) => block.text),
-    ...(page.rows ?? []).flatMap((row) => [row.title, row.status, row.priority, row.assignee, row.category]),
+    ...(page.rows ?? []).flatMap((row) => [
+      row.title,
+      row.status,
+      row.priority,
+      row.assignee,
+      row.category,
+      ...Object.values(row.properties ?? {}).flatMap((value) => Array.isArray(value) ? value : [value === null ? "" : String(value)]),
+    ]),
   ].join(" ").toLowerCase();
 }
 
@@ -132,6 +139,7 @@ function App() {
       kind,
       blocks: kind === "document" ? [{ id: makeId("block"), type: "paragraph", text: "" }] : [],
       rows: kind === "database" ? [] : undefined,
+      databaseProperties: kind === "database" ? [] : undefined,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -148,7 +156,13 @@ function App() {
       id,
       title: `${page.title} (cópia)`,
       blocks: page.blocks.map((block) => ({ ...block, id: makeId("block") })),
-      rows: page.rows?.map((row) => ({ ...row, id: makeId("row") })),
+      rows: page.rows?.map((row) => ({
+        ...row,
+        id: makeId("row"),
+        properties: row.properties
+          ? Object.fromEntries(Object.entries(row.properties).map(([key, value]) => [key, Array.isArray(value) ? [...value] : value]))
+          : undefined,
+      })),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -288,7 +302,12 @@ function App() {
             </div>
             {currentPage.kind === "database" ? <>
               <div className="database-subtitle">Uma base de dados flexível para tarefas, projetos e ideias.</div>
-              <DatabaseView page={currentPage} onUpdateRows={(rows) => updatePage(currentPage.id, { rows })} />
+              <DatabaseView
+                page={currentPage}
+                allPages={workspace.pages}
+                onUpdateRows={(rows) => updatePage(currentPage.id, { rows })}
+                onUpdateProperties={(databaseProperties) => updatePage(currentPage.id, { databaseProperties })}
+              />
             </> : <>
               <div className="page-editor-meta"><span>{formatUpdatedAt(currentPage.updatedAt)}</span></div>
               <BlockEditor blocks={currentPage.blocks} onChange={(blocks: ContentBlock[]) => updatePage(currentPage.id, { blocks })} />

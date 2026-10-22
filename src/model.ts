@@ -21,6 +21,29 @@ export interface ContentBlock {
 export type TaskStatus = "Not started" | "In progress" | "Done";
 export type Priority = "Low" | "Medium" | "High";
 
+export type DatabasePropertyType =
+  | "Text"
+  | "Number"
+  | "Select"
+  | "Multi-select"
+  | "Date"
+  | "Checkbox"
+  | "URL"
+  | "Email"
+  | "Phone"
+  | "Person"
+  | "Relation";
+
+export type DatabasePropertyValue = string | number | boolean | string[] | null;
+
+export interface DatabaseProperty {
+  id: string;
+  name: string;
+  type: DatabasePropertyType;
+  options?: string[];
+  relationDatabaseId?: string;
+}
+
 export interface DatabaseRow {
   id: string;
   title: string;
@@ -30,6 +53,7 @@ export interface DatabaseRow {
   dueDate: string;
   assignee: string;
   category: string;
+  properties?: Record<string, DatabasePropertyValue>;
 }
 
 export interface Page {
@@ -40,6 +64,7 @@ export interface Page {
   kind: "document" | "database";
   blocks: ContentBlock[];
   rows?: DatabaseRow[];
+  databaseProperties?: DatabaseProperty[];
   createdAt: string;
   updatedAt: string;
 }
@@ -130,6 +155,10 @@ export function createInitialWorkspace(): WorkspaceData {
         createdAt: initialTime,
         updatedAt: initialTime,
         blocks: [],
+        databaseProperties: [
+          { id: "property-impact", name: "Impacto", type: "Select", options: ["Alto", "Médio", "Baixo"] },
+          { id: "property-review", name: "Revisão necessária", type: "Checkbox" },
+        ],
         rows: [
           {
             id: "row-northstar",
@@ -140,6 +169,7 @@ export function createInitialWorkspace(): WorkspaceData {
             dueDate: "2026-11-04",
             assignee: "Alex Morgan",
             category: "Produto",
+            properties: { "property-impact": "Alto", "property-review": true },
           },
           {
             id: "row-research",
@@ -150,6 +180,7 @@ export function createInitialWorkspace(): WorkspaceData {
             dueDate: "2026-11-10",
             assignee: "Jordan Lee",
             category: "Pesquisa",
+            properties: { "property-impact": "Médio", "property-review": false },
           },
           {
             id: "row-guide",
@@ -160,6 +191,7 @@ export function createInitialWorkspace(): WorkspaceData {
             dueDate: "2026-10-21",
             assignee: "Sam Taylor",
             category: "Operações",
+            properties: { "property-impact": "Baixo", "property-review": false },
           },
           {
             id: "row-review",
@@ -170,6 +202,7 @@ export function createInitialWorkspace(): WorkspaceData {
             dueDate: "2026-11-15",
             assignee: "",
             category: "Produto",
+            properties: { "property-impact": "Alto", "property-review": true },
           },
         ],
       },

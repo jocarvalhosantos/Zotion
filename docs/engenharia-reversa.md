@@ -93,7 +93,7 @@ O pacote desktop é uma camada Electron com janelas e comunicação entre proces
 - Bases de dados têm propriedades tipadas e várias vistas; a documentação cobre tabela, quadro, lista, calendário, galeria, cronograma, gráfico, mapa, feed e formulários.
 - A busca oferece atalhos e consultas no espaço de trabalho e em bases de dados.
 
-O modelo de dados da aplicação contém páginas, blocos, referências hierárquicas, favoritos e linhas de base de dados. A implementação oferece vistas de tabela, quadro, lista, calendário, galeria e linha do tempo, com datas de início e prazo. As mudanças são salvas no navegador.
+O modelo de dados da aplicação contém páginas, blocos, referências hierárquicas, favoritos e linhas de bases de dados. A implementação oferece vistas de tabela, quadro, lista, calendário, galeria, linha do tempo e gráficos locais de barras/rosca. Bases podem receber propriedades personalizáveis de texto, número, seleção, seleção múltipla por vírgulas, data, checkbox, URL, e-mail, telefone, pessoa em texto simples e relação local de uma via com linhas de outra base. A relação guarda IDs de linhas no navegador; não há relação inversa automática, rollup ou sincronização com o Notion.
 
 ```mermaid
 flowchart LR
@@ -109,9 +109,9 @@ flowchart LR
 
 ## Escopo implementado e lacunas
 
-Implementado nesta versão: navegação hierárquica, favoritos, edição e cópia/colagem de blocos, comandos `/` e atalhos Markdown para blocos, tarefas com checkbox, bases com seis vistas, propriedades básicas, busca local, filtro/ordenação, tema claro/escuro e backup JSON.
+Implementado nesta versão: navegação hierárquica, favoritos, edição e cópia/colagem de blocos, comandos `/` e atalhos Markdown para blocos, tarefas com checkbox, bases com sete vistas (incluindo gráficos locais de barras e rosca), propriedades personalizáveis de tipos básicos, relações locais de uma via entre bases, busca local, filtro/ordenação, tema claro/escuro e backup JSON.
 
-Fora do escopo: seleção/cópia estruturada de vários blocos, persistência do clipboard estruturado entre sessões, login, sincronização, colaboração em tempo real, permissões, comentários, integrações, API do Notion, anexos, propriedades avançadas, fórmulas, rollups, filtros combinados, vistas persistentes, relacionamento entre bases e paridade visual/comportamental completa. Não há serviço de backend; perfis de navegador não compartilham dados.
+Fora do escopo: seleção/cópia estruturada de vários blocos, persistência do clipboard estruturado entre sessões, login, sincronização, colaboração em tempo real, permissões, comentários, integrações, API do Notion, anexos, propriedades automáticas, fórmulas, relações inversas e rollups, filtros combinados, vistas salvas com configurações próprias, gráficos de linha, formulários e paridade visual/comportamental completa. Não há serviço de backend; perfis de navegador não compartilham dados.
 
 ## Referências
 
@@ -120,4 +120,5 @@ Fora do escopo: seleção/cópia estruturada de vários blocos, persistência do
 - [Noções básicas de escrita e edição no Notion](https://www.notion.com/help/writing-and-editing-basics)
 - [Vistas, filtros e ordenação no Notion](https://www.notion.com/en-gb/help/views-filters-and-sorts)
 - [Propriedades de bases de dados no Notion](https://www.notion.com/help/database-properties)
+- [Relações e rollups no Notion](https://www.notion.com/help/relations-and-rollups)
 - [Busca no Notion](https://www.notion.com/en-gb/help/search)
