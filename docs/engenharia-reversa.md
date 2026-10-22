@@ -11,6 +11,7 @@ O resultado é um mapa estático parcial e uma aplicação independente que repr
 - Projeto: [morluto/rea](https://github.com/morluto/rea), CLI `rea-agents` 6.7.0.
 - Operações: `inspect_artifact` e `analyze_javascript_application`.
 - Formato: ASAR, aplicativo Electron.
+- Manifesto `/package.json` do mesmo ASAR: Notion Desktop `7.40.0`; versão declarada de `electron`: `44.9.1`.
 - SHA-256 da raiz do artefato: `afb4684fa08d12d7ccd3c89e2ad195de7047859d437e721689a5cbfc69403549`.
 - Política de integridade: `record-and-continue`, pois o inventário encontrou cinco contradições entre metadados de integridade e bytes observados em módulos nativos desempacotados. Esses bytes foram marcados como não confiáveis e não sustentam conclusões de equivalência.
 
@@ -41,7 +42,7 @@ Confirmei o resultado com uma segunda execução REA, Evidence `ev_df7197a36039e
 
 O REA marcou ambos como `candidate`. Isso confirma as expressões observadas no pacote, mas não identifica o chamador em tempo de execução nem o payload completo, o formato rico, as permissões efetivas ou o fluxo de colagem. O achado não autoriza concluir que o Notion instalado use o mesmo protocolo do estudo público.
 
-O [estudo de caso público do REA sobre a área de transferência do Notion](https://rea.tools/showcase/notion/) descreve outra trilha analisada: texto e HTML no clipboard, um identificador no HTML e dados estruturados mantidos localmente para restaurar blocos quando esse identificador ainda existe. A página identifica Notion Desktop 7.6.1 e assets web em cache de julho de 2026; usei isso como referência conceitual, não como prova do comportamento exato do artefato instalado neste computador.
+O [estudo de caso público do REA sobre a área de transferência do Notion](https://rea.tools/showcase/notion/) descreve uma trilha analisada em Notion Desktop `7.6.1`: texto e HTML no clipboard, um identificador no HTML e dados estruturados mantidos localmente para restaurar blocos quando esse identificador ainda existe. O artefato instalado aqui é `7.40.0`, portanto essa trilha anterior serve como referência conceitual e não prova o comportamento exato desta versão. Os dois fluxos não foram tratados como equivalentes.
 
 ### Escolha de reconstrução nesta aplicação
 
