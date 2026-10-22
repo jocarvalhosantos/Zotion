@@ -109,6 +109,19 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
 
   const getSelectedBlocks = () => blocks.filter((block) => selectedBlockSet.has(block.id));
 
+  const selectedContentBlocks = getSelectedBlocks();
+  const selectedIndices = selectedContentBlocks.map((block) => blocks.findIndex((item) => item.id === block.id));
+  const selectionIsContiguous = selectedIndices.length === selectedBlockIds.length
+    && selectedIndices.length > 0
+    && Math.max(...selectedIndices) - Math.min(...selectedIndices) === selectedIndices.length - 1;
+  const selectedGroupId = selectedContentBlocks[0]?.groupId;
+  const canUngroupSelection = selectionIsContiguous
+    && Boolean(selectedGroupId)
+    && selectedContentBlocks.every((block) => block.groupId === selectedGroupId);
+  const canGroupSelection = selectionIsContiguous
+    && selectedContentBlocks.length > 1
+    && selectedContentBlocks.every((block) => !block.groupId);
+
   const updateBlock = (id: string, update: Partial<ContentBlock>) => {
     onChange(blocks.map((block) => (block.id === id ? { ...block, ...update } : block)));
   };
@@ -212,7 +225,14 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
     const selected = getSelectedBlocks();
     if (!selected.length) return;
     const lastSelectedIndex = blocks.reduce((last, block, index) => selectedBlockSet.has(block.id) ? index : last, -1);
-    const duplicates = selected.map((block) => ({ ...block, id: makeId("block") }));
+    const preservesGroup = selected.length > 1 && Boolean(selected[0].groupId) && selected.every((block) => block.groupId === selected[0].groupId);
+    const duplicateGroupId = preservesGroup ? makeId("block-group") : undefined;
+    const duplicates = selected.map((block) => {
+      const duplicate = { ...block, id: makeId("block") };
+      if (duplicateGroupId) duplicate.groupId = duplicateGroupId;
+      else delete duplicate.groupId;
+      return duplicate;
+    });
     const next = [...blocks];
     next.splice(lastSelectedIndex + 1, 0, ...duplicates);
     onChange(next);
@@ -238,6 +258,22 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
   const moveSelection = (step: -1 | 1) => {
     if (!selectedBlockIds.length) return;
     onChange(moveSelectedBlocks(blocks, selectedBlockIds, step));
+  };
+
+  const groupSelectedBlocks = () => {
+    if (!canGroupSelection) return;
+    const groupId = makeId("block-group");
+    onChange(blocks.map((block) => selectedBlockSet.has(block.id) ? { ...block, groupId } : block));
+  };
+
+  const ungroupSelectedBlocks = () => {
+    if (!canUngroupSelection || !selectedGroupId) return;
+    onChange(blocks.map((block) => {
+      if (block.groupId !== selectedGroupId) return block;
+      const ungrouped = { ...block };
+      delete ungrouped.groupId;
+      return ungrouped;
+    }));
   };
 
   const handleBlockMouseDown = (event: ReactMouseEvent<HTMLDivElement>, blockId: string) => {
@@ -271,7 +307,21 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
     const tail = block.text.slice(input.selectionEnd);
     const replacements: ContentBlock[] = [];
     if (head) replacements.push({ ...block, text: head });
-    const pasted = copiedBlocks.map((copied) => ({ ...copied, id: makeId("block") }));
+    const copiedGroupCounts = new Map<string, number>();
+    for (const copied of copiedBlocks) {
+      if (copied.groupId) copiedGroupCounts.set(copied.groupId, (copiedGroupCounts.get(copied.groupId) ?? 0) + 1);
+    }
+    const pastedGroupIds = new Map<string, string>();
+    const pasted = copiedBlocks.map((copied) => {
+      const pastedBlock = { ...copied, id: makeId("block") };
+      if (copied.groupId && (copiedGroupCounts.get(copied.groupId) ?? 0) > 1) {
+        if (!pastedGroupIds.has(copied.groupId)) pastedGroupIds.set(copied.groupId, makeId("block-group"));
+        pastedBlock.groupId = pastedGroupIds.get(copied.groupId)!;
+      } else {
+        delete pastedBlock.groupId;
+      }
+      return pastedBlock;
+    });
     replacements.push(...pasted);
     if (tail) replacements.push({ ...block, id: makeId("block"), text: tail });
 
@@ -301,8 +351,6 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
     }
   };
 
-  const selectedContentBlocks = getSelectedBlocks();
-
   return (
     <div className="block-editor" onClick={() => setMenuBlockId(null)}>
       {selectedContentBlocks.length > 0 && (
@@ -310,14 +358,18 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
           <strong>{selectedContentBlocks.length} {selectedContentBlocks.length === 1 ? "bloco selecionado" : "blocos selecionados"}</strong>
           <button type="button" aria-label="Copiar seleção" onClick={() => void copyBlocks(selectedContentBlocks)}><Copy size={14} /> Copiar</button>
           <button type="button" aria-label="Duplicar seleção" onClick={duplicateSelectedBlocks}><Copy size={14} /> Duplicar</button>
+          <button type="button" aria-label={canUngroupSelection ? "Desagrupar blocos selecionados" : "Agrupar blocos selecionados"} onClick={canUngroupSelection ? ungroupSelectedBlocks : groupSelectedBlocks} disabled={!canUngroupSelection && !canGroupSelection}>{canUngroupSelection ? "Desagrupar" : "Agrupar"}</button>
           <button type="button" aria-label="Mover seleção para cima" onClick={() => moveSelection(-1)}><ArrowUp size={14} /> Para cima</button>
           <button type="button" aria-label="Mover seleção para baixo" onClick={() => moveSelection(1)}><ArrowDown size={14} /> Para baixo</button>
           <button className="selection-danger-action" type="button" aria-label="Excluir seleção" onClick={deleteSelectedBlocks}><Trash2 size={14} /> Excluir</button>
           <button className="selection-clear-action" type="button" aria-label="Limpar seleção" onClick={clearSelection}><X size={14} /></button>
-          <span>Shift + clique seleciona um intervalo · Ctrl + D duplica · Delete exclui</span>
+          <span>Shift + clique seleciona um intervalo · Agrupar exige blocos contíguos · Ctrl + D duplica · Delete exclui</span>
         </div>
       )}
       {blocks.map((block, index) => {
+        const groupClassName = block.groupId
+          ? ` is-block-grouped${index === 0 || blocks[index - 1].groupId !== block.groupId ? " is-block-group-start" : ""}${index === blocks.length - 1 || blocks[index + 1].groupId !== block.groupId ? " is-block-group-end" : ""}`
+          : "";
         const query = block.text.startsWith("/") ? block.text.slice(1).toLowerCase().trim() : "";
         const matches = query
           ? COMMANDS.filter((command) => `${command.label} ${command.shortcut}`.toLowerCase().includes(query))
@@ -326,7 +378,7 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
 
         return (
           <div
-            className={`block-row block-${block.type} ${selectedBlockSet.has(block.id) ? "is-block-selected" : ""}`}
+            className={`block-row block-${block.type}${groupClassName} ${selectedBlockSet.has(block.id) ? "is-block-selected" : ""}`}
             key={block.id}
             aria-selected={selectedBlockSet.has(block.id)}
             onMouseDown={(event) => handleBlockMouseDown(event, block.id)}

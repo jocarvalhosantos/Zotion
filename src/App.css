@@ -143,6 +143,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .block-editor { position: relative; padding-top: 2px; }
 .block-row { position: relative; display: flex; align-items: flex-start; min-height: 31px; margin: 1px 0; border-radius: 4px; }
 .block-row:hover { background: color-mix(in srgb, var(--hover-2) 45%, transparent); }
+.block-row.is-block-grouped { margin-left: 7px; border-left: 2px solid color-mix(in srgb, var(--accent) 42%, transparent); background: color-mix(in srgb, var(--accent-soft) 24%, transparent); }
+.block-row.is-block-group-start { margin-top: 6px; border-top-left-radius: 6px; border-top-right-radius: 6px; }
+.block-row.is-block-group-end { margin-bottom: 6px; border-bottom-left-radius: 6px; border-bottom-right-radius: 6px; }
 .block-row.is-block-selected, .block-row.is-block-selected:hover { background: var(--accent-soft); box-shadow: inset 2px 0 var(--accent); }
 .block-gutter { position: relative; display: flex; flex: 0 0 27px; justify-content: flex-start; min-height: 26px; padding-top: 3px; }
 .block-handle { display: grid; width: 20px; height: 21px; place-items: center; padding: 0; color: var(--faint); border-radius: 4px; opacity: 0; cursor: grab; }
@@ -184,6 +187,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .block-selection-toolbar strong { margin: 0 4px 0 2px; color: var(--text); font-size: 10px; font-weight: 600; }
 .block-selection-toolbar button { display: inline-flex; align-items: center; gap: 4px; min-height: 25px; padding: 0 6px; border-radius: 4px; color: var(--text-soft); font-size: 10px; }
 .block-selection-toolbar button:hover { background: var(--hover); color: var(--text); }
+.block-selection-toolbar button:disabled { opacity: .42; cursor: default; }
 .block-selection-toolbar .selection-danger-action { color: var(--red); }
 .block-selection-toolbar .selection-clear-action { padding: 0 5px; }
 .block-selection-toolbar span { flex: 1 1 100%; padding: 2px 2px 0; color: var(--muted); font-size: 9px; }

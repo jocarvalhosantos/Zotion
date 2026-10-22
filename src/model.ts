@@ -16,6 +16,7 @@ export interface ContentBlock {
   type: BlockType;
   text: string;
   checked?: boolean;
+  groupId?: string;
 }
 
 export type TaskStatus = "Not started" | "In progress" | "Done";
