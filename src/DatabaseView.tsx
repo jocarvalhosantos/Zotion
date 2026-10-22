@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import {
   ArrowDownWideNarrow,
@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  ClipboardList,
   Filter,
   GanttChart,
   LayoutGrid,
@@ -28,9 +29,9 @@ type DatabaseTableGroup = { id: string; label: string; rows: DatabaseRow[]; subg
 
 const STATUS_LABELS: Record<TaskStatus, string> = { "Not started": "Não iniciada", "In progress": "Em andamento", Done: "Concluída" };
 const PRIORITY_LABELS: Record<Priority, string> = { Low: "Baixa", Medium: "Média", High: "Alta" };
-const VIEW_LABELS: Record<ViewKind, string> = { Table: "Tabela", Board: "Quadro", List: "Lista", Calendar: "Calendário", Gallery: "Galeria", Timeline: "Linha do tempo", Chart: "Gráfico" };
+const VIEW_LABELS: Record<ViewKind, string> = { Table: "Tabela", Board: "Quadro", List: "Lista", Calendar: "Calendário", Gallery: "Galeria", Timeline: "Linha do tempo", Chart: "Gráfico", Form: "Formulário" };
 const DEFAULT_DATABASE_VIEW = createDefaultDatabaseView();
-const VIEW_LAYOUTS: ViewKind[] = ["Table", "Board", "List", "Calendar", "Gallery", "Timeline", "Chart"];
+const VIEW_LAYOUTS: ViewKind[] = ["Table", "Board", "List", "Calendar", "Gallery", "Timeline", "Chart", "Form"];
 const PROPERTY_TYPES: DatabasePropertyType[] = ["Text", "Number", "Select", "Multi-select", "Date", "Checkbox", "URL", "Email", "Phone", "Person", "Relation", "Rollup"];
 const PROPERTY_TYPE_LABELS: Record<DatabasePropertyType, string> = {
   Text: "Texto",
@@ -224,6 +225,9 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
   const [draggedRowId, setDraggedRowId] = useState<string | null>(null);
   const [chartStyle, setChartStyle] = useState<ChartStyle>("Bar");
   const [chartGroupBy, setChartGroupBy] = useState("status");
+  const [formValues, setFormValues] = useState<Record<string, DatabasePropertyValue>>({});
+  const [formSubmitted, setFormSubmitted] = useState(false);
+  const [formError, setFormError] = useState("");
   const [propertyManagerOpen, setPropertyManagerOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
@@ -241,6 +245,22 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
   const rows = page.rows ?? [];
   const properties = page.databaseProperties ?? [];
   const filterProperties = [...BUILTIN_DATABASE_PROPERTIES, ...properties];
+  const formFields = filterProperties.filter((property) => property.type !== "Rollup");
+
+  const getFormQuestion = (propertyId: string) => {
+    const storedQuestion = activeView.formQuestions?.[propertyId];
+    return {
+      enabled: propertyId === "title" || storedQuestion?.enabled !== false,
+      required: propertyId === "title" || storedQuestion?.required === true,
+      description: storedQuestion?.description ?? "",
+    };
+  };
+
+  useEffect(() => {
+    setFormValues({});
+    setFormSubmitted(false);
+    setFormError("");
+  }, [activeView.id]);
 
   const rollupRelationProperties = properties.filter((property) => property.type === "Relation");
   const selectedRollupRelationPropertyId = rollupRelationProperties.some((property) => property.id === rollupRelationPropertyId)
@@ -490,6 +510,16 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
 
   const updateActiveView = (update: Partial<DatabaseViewSettings>) => {
     onUpdateViews(databaseViews.map((candidate) => candidate.id === activeView.id ? { ...candidate, ...update } : candidate));
+  };
+
+  const updateFormQuestion = (propertyId: string, update: Partial<{ enabled: boolean; required: boolean; description: string }>) => {
+    const current = getFormQuestion(propertyId);
+    const next = { ...current, ...update };
+    if (propertyId === "title") {
+      next.enabled = true;
+      next.required = true;
+    }
+    updateActiveView({ formQuestions: { ...(activeView.formQuestions ?? {}), [propertyId]: next } });
   };
 
   const updateSorts = (sorts: DatabaseSortRule[]) => updateActiveView({
@@ -753,6 +783,78 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
     });
   };
 
+  const formValue = (property: DatabaseProperty): DatabasePropertyValue => formValues[property.id]
+    ?? (property.id === "status" ? "Not started"
+      : property.id === "priority" ? "Medium"
+        : property.type === "Checkbox" ? false
+          : property.type === "Multi-select" || property.type === "Relation" ? [] : "");
+
+  const changeFormValue = (propertyId: string, value: DatabasePropertyValue) => {
+    setFormValues((current) => ({ ...current, [propertyId]: value }));
+    setFormError("");
+    setFormSubmitted(false);
+  };
+
+  const renderFormInput = (property: DatabaseProperty): ReactNode => {
+    const value = formValue(property);
+    const textValue = typeof value === "string" ? value : "";
+    const ariaLabel = `Resposta: ${property.name}`;
+    if (property.id === "title") return <input className="database-form-control" value={textValue} onChange={(event) => changeFormValue(property.id, event.target.value)} aria-label={ariaLabel} placeholder="Sua resposta" />;
+    if (property.id === "status") return <select className="database-form-control" value={textValue} onChange={(event) => changeFormValue(property.id, event.target.value)} aria-label={ariaLabel}>{STATUS_OPTIONS.map((option) => <option key={option} value={option}>{STATUS_LABELS[option]}</option>)}</select>;
+    if (property.id === "priority") return <select className="database-form-control" value={textValue} onChange={(event) => changeFormValue(property.id, event.target.value)} aria-label={ariaLabel}>{PRIORITY_OPTIONS.map((option) => <option key={option} value={option}>{PRIORITY_LABELS[option]}</option>)}</select>;
+    if (property.id === "startDate" || property.id === "dueDate") return <input className="database-form-control" type="date" value={textValue} onChange={(event) => changeFormValue(property.id, event.target.value)} aria-label={ariaLabel} />;
+    if (property.id === "assignee" || property.id === "category") return <input className="database-form-control" value={textValue} onChange={(event) => changeFormValue(property.id, event.target.value)} aria-label={ariaLabel} placeholder="Sua resposta" />;
+    if (property.type === "Checkbox") return <label className="database-form-checkbox"><input type="checkbox" checked={value === true} onChange={(event) => changeFormValue(property.id, event.target.checked)} aria-label={ariaLabel} /><span>Sim</span></label>;
+    if (property.type === "Number") return <input className="database-form-control" type="number" value={typeof value === "number" ? value : ""} onChange={(event) => changeFormValue(property.id, event.target.value === "" ? null : Number(event.target.value))} aria-label={ariaLabel} placeholder="Número" />;
+    if (property.type === "Date") return <input className="database-form-control" type="date" value={textValue} onChange={(event) => changeFormValue(property.id, event.target.value)} aria-label={ariaLabel} />;
+    if (property.type === "Select") return <select className="database-form-control" value={textValue} onChange={(event) => changeFormValue(property.id, event.target.value)} aria-label={ariaLabel}><option value="">Escolha uma opção</option>{property.options?.map((option) => <option key={option} value={option}>{option}</option>)}</select>;
+    if (property.type === "Multi-select" || property.type === "Relation") {
+      const selectedValues = Array.isArray(value) ? value.map(String) : [];
+      const options = property.type === "Relation"
+        ? (allPages.find((candidate) => candidate.id === property.relationDatabaseId)?.rows ?? []).map((row) => ({ value: row.id, label: row.title || "Sem título" }))
+        : (property.options ?? []).map((option) => ({ value: option, label: option }));
+      return <div className="database-form-choice-list">{options.length === 0 ? <span className="database-form-help">Nenhuma opção disponível.</span> : options.map((option) => <label key={option.value}><input type="checkbox" checked={selectedValues.includes(option.value)} onChange={(event) => changeFormValue(property.id, event.target.checked ? [...selectedValues, option.value] : selectedValues.filter((selected) => selected !== option.value))} /><span>{option.label}</span></label>)}</div>;
+    }
+    const inputType = property.type === "URL" ? "url" : property.type === "Email" ? "email" : property.type === "Phone" ? "tel" : "text";
+    return <input className="database-form-control" type={inputType} value={textValue} onChange={(event) => changeFormValue(property.id, event.target.value)} aria-label={ariaLabel} placeholder={inputType === "text" ? "Sua resposta" : PROPERTY_TYPE_LABELS[property.type]} />;
+  };
+
+  const submitForm = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const visibleFields = formFields.filter((property) => getFormQuestion(property.id).enabled);
+    const missingField = visibleFields.find((property) => {
+      if (!getFormQuestion(property.id).required) return false;
+      const value = formValue(property);
+      return value === null || value === undefined || value === "" || (Array.isArray(value) && value.length === 0);
+    });
+    if (missingField) {
+      setFormError(`Preencha o campo obrigatório: ${missingField.name}.`);
+      return;
+    }
+    const valueAsString = (propertyId: string) => {
+      const value = formValues[propertyId];
+      return typeof value === "string" ? value : "";
+    };
+    const rowProperties = Object.fromEntries(properties
+      .filter((property) => property.type !== "Rollup")
+      .map((property) => [property.id, formValues[property.id] ?? (property.type === "Checkbox" ? false : property.type === "Multi-select" || property.type === "Relation" ? [] : null)]));
+    const newRow: DatabaseRow = {
+      id: makeId("row"),
+      title: valueAsString("title").trim(),
+      status: (valueAsString("status") || "Not started") as TaskStatus,
+      priority: (valueAsString("priority") || "Medium") as Priority,
+      startDate: valueAsString("startDate"),
+      dueDate: valueAsString("dueDate"),
+      assignee: valueAsString("assignee"),
+      category: valueAsString("category"),
+      properties: rowProperties,
+    };
+    onUpdateRows([...rows, newRow]);
+    setFormValues({});
+    setFormError("");
+    setFormSubmitted(true);
+  };
+
   const removeRow = (id: string) => onUpdateRows(rows.filter((row) => row.id !== id));
 
   const monthLabel = calendarMonth.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
@@ -836,7 +938,7 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
       <div className="database-toolbar">
         <div className="database-tabs" role="tablist" aria-label="Visualizações da base de dados">
           {databaseViews.map((databaseView) => {
-            const Icon = databaseView.layout === "Table" ? Table2 : databaseView.layout === "Board" ? Columns3 : databaseView.layout === "List" ? List : databaseView.layout === "Calendar" ? CalendarDays : databaseView.layout === "Gallery" ? LayoutGrid : databaseView.layout === "Chart" ? BarChart3 : GanttChart;
+            const Icon = databaseView.layout === "Table" ? Table2 : databaseView.layout === "Board" ? Columns3 : databaseView.layout === "List" ? List : databaseView.layout === "Calendar" ? CalendarDays : databaseView.layout === "Gallery" ? LayoutGrid : databaseView.layout === "Chart" ? BarChart3 : databaseView.layout === "Form" ? ClipboardList : GanttChart;
             return (
               <button key={databaseView.id} role="tab" aria-selected={databaseView.id === activeView.id} className={`database-tab ${databaseView.id === activeView.id ? "active" : ""}`} onClick={() => onUpdateActiveViewId(databaseView.id)} type="button" title={VIEW_LABELS[databaseView.layout]}>
                 <Icon size={15} /> {databaseView.name}
@@ -899,10 +1001,30 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
             <button className={`icon-button database-sort ${viewSettingsOpen ? "selected" : ""}`} type="button" title="Configurações da visualização" aria-expanded={viewSettingsOpen} onClick={() => { setViewSettingsOpen((open) => !open); setFilterOpen(false); setSortOpen(false); setViewCreateOpen(false); }}>
               <Settings2 size={16} /><span>Visualização</span>
             </button>
-            {viewSettingsOpen && <div className="database-view-settings-popover" role="dialog" aria-label="Configurações da visualização">
+            {viewSettingsOpen && <div className={`database-view-settings-popover ${view === "Form" ? "database-form-settings" : ""}`} role="dialog" aria-label="Configurações da visualização">
               <div className="database-popover-heading"><strong>Visualização</strong><span>Preferências salvas nesta base</span></div>
               <label>Nome<input value={activeView.name} onChange={(event) => updateActiveView({ name: event.target.value })} aria-label="Nome da visualização atual" /></label>
               <label>Layout<select value={activeView.layout} onChange={(event) => updateActiveView({ layout: event.target.value as ViewKind })} aria-label="Layout atual">{VIEW_LAYOUTS.map((layout) => <option key={layout} value={layout}>{VIEW_LABELS[layout]}</option>)}</select></label>
+              {view === "Form" && <>
+                <div className="database-form-settings-heading"><strong>Apresentação do formulário</strong><span>Ajustes salvos nesta visualização</span></div>
+                <label>Título<input value={activeView.formTitle ?? ""} onChange={(event) => updateActiveView({ formTitle: event.target.value })} placeholder={page.title} aria-label="Título do formulário" /></label>
+                <label>Descrição<textarea value={activeView.formDescription ?? ""} onChange={(event) => updateActiveView({ formDescription: event.target.value })} placeholder="Explique o objetivo deste formulário" aria-label="Descrição do formulário" rows={3} /></label>
+                <div className="database-form-settings-heading"><strong>Perguntas</strong><span>Marque os campos que deseja perguntar</span></div>
+                <div className="database-form-question-settings">
+                  {formFields.map((property) => {
+                    const question = getFormQuestion(property.id);
+                    return <div className="database-form-question-setting" key={property.id}>
+                      <label className="database-form-question-toggle"><input type="checkbox" checked={question.enabled} disabled={property.id === "title"} onChange={(event) => updateFormQuestion(property.id, { enabled: event.target.checked })} /><strong>{property.name}</strong></label>
+                      <label className="database-form-required-toggle"><input type="checkbox" checked={question.required} disabled={!question.enabled || property.id === "title"} onChange={(event) => updateFormQuestion(property.id, { required: event.target.checked })} />Obrigatória</label>
+                      <input value={question.description} onChange={(event) => updateFormQuestion(property.id, { description: event.target.value })} disabled={!question.enabled} placeholder="Ajuda opcional" aria-label={`Descrição da pergunta ${property.name}`} />
+                    </div>;
+                  })}
+                </div>
+                <label>Texto do botão<input value={activeView.formSubmitLabel ?? ""} onChange={(event) => updateActiveView({ formSubmitLabel: event.target.value })} placeholder="Enviar resposta" aria-label="Texto do botão de envio" /></label>
+                <label>Título de confirmação<input value={activeView.formConfirmationTitle ?? ""} onChange={(event) => updateActiveView({ formConfirmationTitle: event.target.value })} placeholder="Resposta enviada" aria-label="Título da confirmação" /></label>
+                <label>Mensagem de confirmação<textarea value={activeView.formConfirmationBody ?? ""} onChange={(event) => updateActiveView({ formConfirmationBody: event.target.value })} placeholder="Sua resposta foi salva nesta base de dados." aria-label="Mensagem de confirmação" rows={2} /></label>
+                <p className="database-form-settings-note">As respostas ficam salvas apenas neste navegador.</p>
+              </>}
               {view === "Table" && <>
                 <label>Agrupar por<select value={activeView.groupPropertyId ?? ""} onChange={(event) => updateActiveView({ groupPropertyId: event.target.value, subGroupPropertyId: event.target.value && event.target.value !== activeView.subGroupPropertyId ? activeView.subGroupPropertyId : "" })} aria-label="Agrupar linhas por"><option value="">Sem agrupamento</option>{filterProperties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}</select></label>
                 {activeView.groupPropertyId && <label>Subgrupo por<select value={activeView.subGroupPropertyId ?? ""} onChange={(event) => updateActiveView({ subGroupPropertyId: event.target.value })} aria-label="Subagrupar linhas por"><option value="">Sem subgrupo</option>{filterProperties.filter((property) => property.id !== activeView.groupPropertyId).map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}</select></label>}
@@ -1116,6 +1238,34 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
               </div>
             </div>
             <p className="timeline-hint">Edite as datas de início e prazo na visualização Tabela. Itens sem datas não aparecem como barras.</p>
+          </div>
+        )}
+
+        {view === "Form" && (
+          <div className="database-form-view">
+            {formSubmitted ? <div className="database-form-success" role="status">
+              <div className="database-form-success-icon">✓</div>
+              <h3>{activeView.formConfirmationTitle?.trim() || "Resposta enviada"}</h3>
+              <p>{activeView.formConfirmationBody?.trim() || "Sua resposta foi salva nesta base de dados."}</p>
+              <button className="database-new-button" type="button" onClick={() => { setFormSubmitted(false); setFormValues({}); }}>Enviar outra resposta</button>
+            </div> : <form className="database-form" onSubmit={submitForm} noValidate>
+              <header className="database-form-header">
+                <ClipboardList size={21} />
+                <h2>{activeView.formTitle?.trim() || page.title}</h2>
+                {(activeView.formDescription ?? "").trim() && <p>{activeView.formDescription}</p>}
+              </header>
+              {formFields.filter((property) => getFormQuestion(property.id).enabled).map((property) => {
+                const question = getFormQuestion(property.id);
+                return <div className="database-form-field" key={property.id}>
+                  <div className="database-form-label">{property.name}{question.required && <span aria-label="Obrigatória"> *</span>}</div>
+                  {question.description.trim() && <p className="database-form-help">{question.description}</p>}
+                  {renderFormInput(property)}
+                </div>;
+              })}
+              {formError && <p className="database-form-error" role="alert">{formError}</p>}
+              <button className="database-form-submit" type="submit">{activeView.formSubmitLabel?.trim() || "Enviar resposta"}</button>
+              <p className="database-form-local-note">A resposta será armazenada neste navegador.</p>
+            </form>}
           </div>
         )}
       </div>

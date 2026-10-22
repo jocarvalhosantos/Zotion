@@ -55,7 +55,7 @@ export type RollupFunction =
   | "Latest date"
   | "Date range";
 
-export type DatabaseViewLayout = "Table" | "Board" | "List" | "Calendar" | "Gallery" | "Timeline" | "Chart";
+export type DatabaseViewLayout = "Table" | "Board" | "List" | "Calendar" | "Gallery" | "Timeline" | "Chart" | "Form";
 export type DatabaseFilterOperator =
   | "is"
   | "is-not"
@@ -103,6 +103,12 @@ export interface DatabaseViewSettings {
   subGroupPropertyId?: string;
   sortPropertyId: string;
   sortDirection: "Ascending" | "Descending";
+  formTitle?: string;
+  formDescription?: string;
+  formSubmitLabel?: string;
+  formConfirmationTitle?: string;
+  formConfirmationBody?: string;
+  formQuestions?: Record<string, { enabled: boolean; required: boolean; description: string }>;
 }
 
 export type DatabasePropertyValue = string | number | boolean | string[] | null;
