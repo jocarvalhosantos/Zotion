@@ -26,6 +26,7 @@ export interface DatabaseRow {
   title: string;
   status: TaskStatus;
   priority: Priority;
+  startDate?: string;
   dueDate: string;
   assignee: string;
   category: string;
@@ -135,6 +136,7 @@ export function createInitialWorkspace(): WorkspaceData {
             title: "Lançamento do Northstar",
             status: "In progress",
             priority: "High",
+            startDate: "2026-10-26",
             dueDate: "2026-11-04",
             assignee: "Alex Morgan",
             category: "Produto",
@@ -144,6 +146,7 @@ export function createInitialWorkspace(): WorkspaceData {
             title: "Entrevistas com clientes",
             status: "Not started",
             priority: "Medium",
+            startDate: "2026-10-28",
             dueDate: "2026-11-10",
             assignee: "Jordan Lee",
             category: "Pesquisa",
@@ -153,6 +156,7 @@ export function createInitialWorkspace(): WorkspaceData {
             title: "Publicar guia de integração",
             status: "Done",
             priority: "Low",
+            startDate: "2026-10-19",
             dueDate: "2026-10-21",
             assignee: "Sam Taylor",
             category: "Operações",
@@ -162,6 +166,7 @@ export function createInitialWorkspace(): WorkspaceData {
             title: "Revisar feedback do lançamento",
             status: "Not started",
             priority: "High",
+            startDate: "2026-11-10",
             dueDate: "2026-11-15",
             assignee: "",
             category: "Produto",

@@ -5,6 +5,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Filter,
+  GanttChart,
+  LayoutGrid,
   List,
   Plus,
   Search,
@@ -15,11 +17,11 @@ import {
 import { PRIORITY_OPTIONS, STATUS_OPTIONS, makeId } from "./model";
 import type { DatabaseRow, Page, Priority, TaskStatus } from "./model";
 
-type ViewKind = "Table" | "Board" | "List" | "Calendar";
+type ViewKind = "Table" | "Board" | "List" | "Calendar" | "Gallery" | "Timeline";
 
 const STATUS_LABELS: Record<TaskStatus, string> = { "Not started": "Não iniciada", "In progress": "Em andamento", Done: "Concluída" };
 const PRIORITY_LABELS: Record<Priority, string> = { Low: "Baixa", Medium: "Média", High: "Alta" };
-const VIEW_LABELS: Record<ViewKind, string> = { Table: "Tabela", Board: "Quadro", List: "Lista", Calendar: "Calendário" };
+const VIEW_LABELS: Record<ViewKind, string> = { Table: "Tabela", Board: "Quadro", List: "Lista", Calendar: "Calendário", Gallery: "Galeria", Timeline: "Linha do tempo" };
 
 interface DatabaseViewProps {
   page: Page;
@@ -70,6 +72,7 @@ export function DatabaseView({ page, onUpdateRows }: DatabaseViewProps) {
       title: "Nova tarefa",
       status,
       priority: "Medium",
+      startDate: "",
       dueDate: "",
       assignee: "",
       category: "",
@@ -86,6 +89,9 @@ export function DatabaseView({ page, onUpdateRows }: DatabaseViewProps) {
 
   const monthLabel = calendarMonth.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
   const monthStart = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1);
+  const monthEnd = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 0);
+  const daysInMonth = monthEnd.getDate();
+  const timelineColumns = `190px repeat(${daysInMonth}, 34px)`;
   const firstDay = new Date(monthStart);
   firstDay.setDate(1 - monthStart.getDay());
   const calendarDates = Array.from({ length: 42 }, (_, index) => {
@@ -98,8 +104,8 @@ export function DatabaseView({ page, onUpdateRows }: DatabaseViewProps) {
     <section className="database-view" aria-label={`${page.title} database`}>
       <div className="database-toolbar">
         <div className="database-tabs" role="tablist" aria-label="Visualizações da base de dados">
-          {(["Table", "Board", "List", "Calendar"] as ViewKind[]).map((kind) => {
-            const Icon = kind === "Table" ? Table2 : kind === "Board" ? Columns3 : kind === "List" ? List : CalendarDays;
+          {(["Table", "Board", "List", "Calendar", "Gallery", "Timeline"] as ViewKind[]).map((kind) => {
+            const Icon = kind === "Table" ? Table2 : kind === "Board" ? Columns3 : kind === "List" ? List : kind === "Calendar" ? CalendarDays : kind === "Gallery" ? LayoutGrid : GanttChart;
             return (
               <button key={kind} role="tab" aria-selected={view === kind} className={`database-tab ${view === kind ? "active" : ""}`} onClick={() => setView(kind)} type="button">
                 <Icon size={15} /> {VIEW_LABELS[kind]}
@@ -136,6 +142,7 @@ export function DatabaseView({ page, onUpdateRows }: DatabaseViewProps) {
                   <th className="title-column"><span>▤</span> Nome</th>
                   <th><span className="property-dot status-dot" /> Status</th>
                   <th><span className="property-dot priority-dot" /> Prioridade</th>
+                  <th><CalendarDays size={13} /> Início</th>
                   <th><CalendarDays size={13} /> Prazo</th>
                   <th><span className="property-dot person-dot" /> Responsável</th>
                   <th><span className="property-dot category-dot" /> Categoria</th>
@@ -148,6 +155,7 @@ export function DatabaseView({ page, onUpdateRows }: DatabaseViewProps) {
                     <td className="title-column"><span className="row-page-icon">▱</span><input data-row-title={row.id} className="cell-title" value={row.title} onChange={(event) => updateRow(row.id, { title: event.target.value })} aria-label="Nome da tarefa" /></td>
                     <td><select className={`status-select status-${row.status.toLowerCase().replaceAll(" ", "-")}`} value={row.status} onChange={(event) => updateRow(row.id, { status: event.target.value as TaskStatus })} aria-label="Status da tarefa">{STATUS_OPTIONS.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></td>
                     <td><select className={`priority-select priority-${row.priority.toLowerCase()}`} value={row.priority} onChange={(event) => updateRow(row.id, { priority: event.target.value as Priority })} aria-label="Prioridade da tarefa">{PRIORITY_OPTIONS.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select></td>
+                    <td><input className="cell-date" type="date" value={row.startDate ?? ""} onChange={(event) => updateRow(row.id, { startDate: event.target.value })} aria-label="Data de início" /></td>
                     <td><input className="cell-date" type="date" value={row.dueDate} onChange={(event) => updateRow(row.id, { dueDate: event.target.value })} aria-label="Prazo" /></td>
                     <td><input className="cell-text" value={row.assignee} onChange={(event) => updateRow(row.id, { assignee: event.target.value })} placeholder="Atribuir" aria-label="Responsável" /></td>
                     <td><input className="cell-text" value={row.category} onChange={(event) => updateRow(row.id, { category: event.target.value })} placeholder="Adicionar categoria" aria-label="Categoria" /></td>
@@ -172,6 +180,26 @@ export function DatabaseView({ page, onUpdateRows }: DatabaseViewProps) {
             </div>)}
             {visibleRows.length === 0 && <EmptyRows query={query} onAdd={addRow} />}
             <button className="add-row-inline" type="button" onClick={() => addRow()}><Plus size={14} /> Nova página</button>
+          </div>
+        )}
+
+        {view === "Gallery" && (
+          <div className="gallery-grid">
+            {visibleRows.map((row) => <article className="gallery-card" key={row.id}>
+              <div className={`gallery-card-cover status-${row.status.toLowerCase().replaceAll(" ", "-")}`}><span>{row.category || "Sem categoria"}</span><span className="gallery-cover-mark">✦</span></div>
+              <div className="gallery-card-body">
+                <input className="gallery-card-title" value={row.title} onChange={(event) => updateRow(row.id, { title: event.target.value })} aria-label="Nome da página" />
+                <div className="gallery-card-properties">
+                  <label><span>Status</span><select className={`status-select status-${row.status.toLowerCase().replaceAll(" ", "-")}`} value={row.status} onChange={(event) => updateRow(row.id, { status: event.target.value as TaskStatus })} aria-label="Status da tarefa">{STATUS_OPTIONS.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></label>
+                  <label><span>Prioridade</span><select className={`priority-select priority-${row.priority.toLowerCase()}`} value={row.priority} onChange={(event) => updateRow(row.id, { priority: event.target.value as Priority })} aria-label="Prioridade da tarefa">{PRIORITY_OPTIONS.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select></label>
+                  <label><span>Responsável</span><input value={row.assignee} onChange={(event) => updateRow(row.id, { assignee: event.target.value })} placeholder="Atribuir" aria-label="Responsável" /></label>
+                  <label><span>Prazo</span><input type="date" value={row.dueDate} onChange={(event) => updateRow(row.id, { dueDate: event.target.value })} aria-label="Prazo" /></label>
+                </div>
+                <button type="button" className="gallery-delete" onClick={() => removeRow(row.id)}><Trash2 size={13} /> Excluir página</button>
+              </div>
+            </article>)}
+            {visibleRows.length === 0 && <EmptyRows query={query} onAdd={addRow} />}
+            <button className="gallery-add-card" type="button" onClick={() => addRow()}><Plus size={16} /> Nova página</button>
           </div>
         )}
 
@@ -210,6 +238,40 @@ export function DatabaseView({ page, onUpdateRows }: DatabaseViewProps) {
                 </div>;
               })}
             </div>
+          </div>
+        )}
+
+        {view === "Timeline" && (
+          <div className="timeline-view">
+            <div className="calendar-heading"><h3>{monthLabel}</h3><div><button type="button" aria-label="Mês anterior" onClick={() => setCalendarMonth((date) => getCalendarMonth(date, -1))}><ChevronLeft size={17} /></button><button type="button" onClick={() => setCalendarMonth(new Date())}>Hoje</button><button type="button" aria-label="Próximo mês" onClick={() => setCalendarMonth((date) => getCalendarMonth(date, 1))}><ChevronRight size={17} /></button></div></div>
+            <div className="timeline-scroll">
+              <div className="timeline-grid" style={{ gridTemplateColumns: timelineColumns }}>
+                <div className="timeline-axis-title">Página</div>
+                {Array.from({ length: daysInMonth }, (_, index) => {
+                  const date = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), index + 1);
+                  const isToday = date.toDateString() === new Date().toDateString();
+                  return <div className={`timeline-day-header ${isToday ? "timeline-today" : ""}`} key={index}><small>{date.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "")}</small><strong>{index + 1}</strong></div>;
+                })}
+                {visibleRows.map((row) => {
+                  const startValue = row.startDate || row.dueDate;
+                  const endValue = row.dueDate || row.startDate;
+                  let startDate = startValue ? new Date(`${startValue}T12:00:00`) : null;
+                  let endDate = endValue ? new Date(`${endValue}T12:00:00`) : null;
+                  if (startDate && endDate && startDate > endDate) [startDate, endDate] = [endDate, startDate];
+                  const intersects = !!startDate && !!endDate && startDate <= monthEnd && endDate >= monthStart;
+                  const visibleStart = intersects && startDate ? (startDate < monthStart ? monthStart : startDate) : null;
+                  const visibleEnd = intersects && endDate ? (endDate > monthEnd ? monthEnd : endDate) : null;
+                  const firstDay = visibleStart?.getDate() ?? 0;
+                  const span = visibleStart && visibleEnd ? Math.max(1, Math.round((visibleEnd.getTime() - visibleStart.getTime()) / 86400000) + 1) : 1;
+                  return <div className="timeline-row" key={row.id} style={{ gridTemplateColumns: timelineColumns, gridColumn: "1 / -1" }}>
+                    <button className="timeline-row-title" type="button" onClick={() => { setView("Table"); setQuery(row.title); }} title="Abrir esta página na tabela">{row.title || "Sem título"}</button>
+                    {Array.from({ length: daysInMonth }, (_, index) => <span className={`timeline-day-cell ${((index + new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1).getDay()) % 7 === 0 || (index + new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1).getDay()) % 7 === 6) ? "timeline-weekend" : ""}`} style={{ gridColumn: index + 2 }} key={index} />)}
+                    {intersects && <button className={`timeline-bar status-${row.status.toLowerCase().replaceAll(" ", "-")}`} style={{ gridColumn: `${firstDay + 1} / span ${span}`, gridRow: 1 }} type="button" onClick={() => { setView("Table"); setQuery(row.title); }} title={`${row.title}: ${formatDate(startValue ?? "")} – ${formatDate(endValue ?? "")}`}>{row.title}</button>}
+                  </div>;
+                })}
+              </div>
+            </div>
+            <p className="timeline-hint">Edite as datas de início e prazo na visualização Tabela. Itens sem datas não aparecem como barras.</p>
           </div>
         )}
       </div>
