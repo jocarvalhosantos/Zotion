@@ -36,6 +36,18 @@ function escapeHtml(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 }
 
+function markdownShortcutType(text: string): BlockType | undefined {
+  if (text === "### ") return "heading3";
+  if (text === "## ") return "heading2";
+  if (text === "# ") return "heading1";
+  if (["- ", "* ", "+ "].includes(text)) return "bulleted";
+  if (text === "1. ") return "numbered";
+  if (text === "[]" || text === "[] ") return "todo";
+  if (text === '" ') return "quote";
+  if (text === "---") return "divider";
+  return undefined;
+}
+
 function moveBlock(blocks: ContentBlock[], index: number, step: -1 | 1): ContentBlock[] {
   const nextIndex = index + step;
   if (nextIndex < 0 || nextIndex >= blocks.length) return blocks;
@@ -154,6 +166,13 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
   };
 
   const onTextChange = (block: ContentBlock, text: string, input: HTMLTextAreaElement) => {
+    const shortcutType = block.type === "paragraph" && markdownShortcutType(text);
+    if (shortcutType) {
+      updateBlock(block.id, { type: shortcutType, text: "", checked: false });
+      setSlashBlockId(null);
+      setMenuBlockId(null);
+      return;
+    }
     updateBlock(block.id, { text });
     input.style.height = "auto";
     input.style.height = `${Math.max(26, input.scrollHeight)}px`;
@@ -283,7 +302,7 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
       })}
       <button className="add-block-button" type="button" onClick={() => insertAfter(blocks.length - 1)}><Plus size={15} /> Adicionar bloco</button>
       {copyNotice && <div className="block-copy-notice" role="status">{copyNotice}</div>}
-      <div className="editor-hint">Digite <kbd>/</kbd> para ver comandos <span>·</span> Pressione <kbd>Enter</kbd> para criar um bloco</div>
+      <div className="editor-hint">Digite <kbd>/</kbd> para ver comandos <span>·</span> Use <kbd>#</kbd>, <kbd>-</kbd> ou <kbd>[]</kbd> no início da linha <span>·</span> <kbd>Enter</kbd> cria um bloco</div>
     </div>
   );
 }
