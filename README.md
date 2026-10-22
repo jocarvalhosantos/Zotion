@@ -5,7 +5,7 @@ Uma aplicação web de estudo, em português, inspirada nos conceitos observados
 ## O que funciona
 
 - Páginas hierárquicas, favoritos e navegação por trilha.
-- Editor de blocos com títulos, listas, tarefas, citações, destaques, código e divisores. Use `/` ou atalhos Markdown para inserir blocos; copie e cole blocos preservando o tipo dentro da mesma sessão.
+- Editor de blocos com títulos, listas, tarefas, citações, destaques, código e divisores. Use `/` ou atalhos Markdown para inserir blocos; selecione vários com `Shift` + clique ou setas e copie, recorte, duplique, exclua ou reordene a seleção. A cópia estruturada preserva tipos na sessão atual.
 - Bases de dados com vistas de tabela, quadro, lista, calendário, galeria, linha do tempo e gráfico de barras/rosca; propriedades personalizáveis de texto, número, seleção, seleção múltipla, data, checkbox, URL, e-mail, telefone, pessoa (texto simples), relação local de uma via e rollup calculado.
 - Vistas nomeadas com configuração própria, filtros por propriedades e operadores com grupos AND/OR aninháveis até três níveis, várias ordenações em sequência, agrupamento e subagrupamento de linhas na tabela e movimentação de cartões.
 - Busca local em títulos, conteúdo e campos da base.

@@ -1,6 +1,6 @@
 import { useState } from "react";
-import type { ClipboardEvent } from "react";
-import { ArrowDown, ArrowUp, Copy, GripVertical, Plus, Trash2 } from "lucide-react";
+import type { ClipboardEvent, MouseEvent as ReactMouseEvent } from "react";
+import { ArrowDown, ArrowUp, Copy, GripVertical, Plus, Trash2, X } from "lucide-react";
 import { makeId } from "./model";
 import type { ContentBlock, BlockType } from "./model";
 
@@ -56,11 +56,58 @@ function moveBlock(blocks: ContentBlock[], index: number, step: -1 | 1): Content
   return next;
 }
 
+function moveSelectedBlocks(blocks: ContentBlock[], selectedIds: string[], step: -1 | 1): ContentBlock[] {
+  const selected = new Set(selectedIds);
+  const next = [...blocks];
+  if (step === -1) {
+    for (let index = 1; index < next.length; index += 1) {
+      if (selected.has(next[index].id) && !selected.has(next[index - 1].id)) {
+        [next[index - 1], next[index]] = [next[index], next[index - 1]];
+      }
+    }
+  } else {
+    for (let index = next.length - 2; index >= 0; index -= 1) {
+      if (selected.has(next[index].id) && !selected.has(next[index + 1].id)) {
+        [next[index], next[index + 1]] = [next[index + 1], next[index]];
+      }
+    }
+  }
+  return next;
+}
+
 export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
   const [slashBlockId, setSlashBlockId] = useState<string | null>(null);
   const [slashIndex, setSlashIndex] = useState(0);
   const [menuBlockId, setMenuBlockId] = useState<string | null>(null);
   const [copyNotice, setCopyNotice] = useState("");
+  const [selectedBlockIds, setSelectedBlockIds] = useState<string[]>([]);
+  const [selectionAnchorId, setSelectionAnchorId] = useState<string | null>(null);
+  const [selectionCursorId, setSelectionCursorId] = useState<string | null>(null);
+  const selectedBlockSet = new Set(selectedBlockIds);
+
+  const clearSelection = () => {
+    setSelectedBlockIds([]);
+    setSelectionAnchorId(null);
+    setSelectionCursorId(null);
+  };
+
+  const selectRange = (anchorId: string, targetId: string) => {
+    const anchorIndex = blocks.findIndex((block) => block.id === anchorId);
+    const targetIndex = blocks.findIndex((block) => block.id === targetId);
+    if (anchorIndex < 0 || targetIndex < 0) {
+      setSelectedBlockIds([targetId]);
+      setSelectionAnchorId(targetId);
+      setSelectionCursorId(targetId);
+      return;
+    }
+    const first = Math.min(anchorIndex, targetIndex);
+    const last = Math.max(anchorIndex, targetIndex);
+    setSelectedBlockIds(blocks.slice(first, last + 1).map((block) => block.id));
+    setSelectionAnchorId(anchorId);
+    setSelectionCursorId(targetId);
+  };
+
+  const getSelectedBlocks = () => blocks.filter((block) => selectedBlockSet.has(block.id));
 
   const updateBlock = (id: string, update: Partial<ContentBlock>) => {
     onChange(blocks.map((block) => (block.id === id ? { ...block, ...update } : block)));
@@ -114,32 +161,102 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
     focusBlock(duplicate.id);
   };
 
-  const copyBlock = async (block: ContentBlock) => {
+  const rememberCopiedBlocks = (copiedBlocks: ContentBlock[]) => {
     const copyId = makeId("copy");
-    richBlockClipboard.set(copyId, [{ ...block }]);
+    richBlockClipboard.set(copyId, copiedBlocks.map((block) => ({ ...block })));
     if (richBlockClipboard.size > 50) {
       const oldestCopyId = richBlockClipboard.keys().next().value;
       if (oldestCopyId) richBlockClipboard.delete(oldestCopyId);
     }
-    const html = `<p>${escapeHtml(block.text).replaceAll("\n", "<br>")}</p><!-- workspace-lab:${copyId} -->`;
+    return copyId;
+  };
+
+  const clipboardHtml = (copyId: string, copiedBlocks: ContentBlock[]) =>
+    `${copiedBlocks.map((block) => `<p>${escapeHtml(block.text).replaceAll("\n", "<br>")}</p>`).join("")}<!-- workspace-lab:${copyId} -->`;
+
+  const setRichClipboardData = (clipboardData: DataTransfer, copiedBlocks: ContentBlock[]) => {
+    const copyId = rememberCopiedBlocks(copiedBlocks);
+    clipboardData.setData("text/plain", copiedBlocks.map((block) => block.text).join("\n"));
+    clipboardData.setData("text/html", clipboardHtml(copyId, copiedBlocks));
+  };
+
+  const copyBlocks = async (copiedBlocks: ContentBlock[]) => {
+    if (!copiedBlocks.length) return;
+    const copyId = rememberCopiedBlocks(copiedBlocks);
+    const text = copiedBlocks.map((block) => block.text).join("\n");
     try {
       if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") throw new Error("Rich clipboard unavailable");
       await navigator.clipboard.write([new ClipboardItem({
-        "text/plain": new Blob([block.text], { type: "text/plain" }),
-        "text/html": new Blob([html], { type: "text/html" }),
+        "text/plain": new Blob([text], { type: "text/plain" }),
+        "text/html": new Blob([clipboardHtml(copyId, copiedBlocks)], { type: "text/html" }),
       })]);
-      setCopyNotice("Bloco copiado. Ao colar nesta sessão, o tipo e o conteúdo serão preservados.");
+      setCopyNotice(copiedBlocks.length === 1
+        ? "Bloco copiado. Ao colar nesta sessão, o tipo e o conteúdo serão preservados."
+        : `${copiedBlocks.length} blocos copiados. Ao colar nesta sessão, os tipos e conteúdos serão preservados.`);
     } catch {
       richBlockClipboard.delete(copyId);
       try {
-        await navigator.clipboard.writeText(block.text);
-        setCopyNotice("Texto copiado. A estrutura do bloco não foi incluída pelo navegador.");
+        await navigator.clipboard.writeText(text);
+        setCopyNotice("Texto copiado. A estrutura dos blocos não foi incluída pelo navegador.");
       } catch {
         setCopyNotice("Não foi possível copiar. Verifique a permissão de área de transferência do navegador.");
       }
     }
     setMenuBlockId(null);
     window.setTimeout(() => setCopyNotice(""), 4500);
+  };
+
+  const copyBlock = async (block: ContentBlock) => copyBlocks([block]);
+
+  const duplicateSelectedBlocks = () => {
+    const selected = getSelectedBlocks();
+    if (!selected.length) return;
+    const lastSelectedIndex = blocks.reduce((last, block, index) => selectedBlockSet.has(block.id) ? index : last, -1);
+    const duplicates = selected.map((block) => ({ ...block, id: makeId("block") }));
+    const next = [...blocks];
+    next.splice(lastSelectedIndex + 1, 0, ...duplicates);
+    onChange(next);
+    setSelectedBlockIds(duplicates.map((block) => block.id));
+    setSelectionAnchorId(duplicates[0].id);
+    setSelectionCursorId(duplicates.at(-1)!.id);
+    setMenuBlockId(null);
+    focusBlock(duplicates[0].id);
+  };
+
+  const deleteSelectedBlocks = () => {
+    const selected = getSelectedBlocks();
+    if (!selected.length) return;
+    const firstSelectedIndex = blocks.findIndex((block) => selectedBlockSet.has(block.id));
+    let next = blocks.filter((block) => !selectedBlockSet.has(block.id));
+    if (!next.length) next = [{ id: makeId("block"), type: "paragraph", text: "" }];
+    onChange(next);
+    clearSelection();
+    setMenuBlockId(null);
+    focusBlock(next[Math.min(firstSelectedIndex, next.length - 1)].id, 0);
+  };
+
+  const moveSelection = (step: -1 | 1) => {
+    if (!selectedBlockIds.length) return;
+    onChange(moveSelectedBlocks(blocks, selectedBlockIds, step));
+  };
+
+  const handleBlockMouseDown = (event: ReactMouseEvent<HTMLDivElement>, blockId: string) => {
+    if (!event.shiftKey) return;
+    event.preventDefault();
+    setSlashBlockId(null);
+    setMenuBlockId(null);
+    if (event.altKey || event.metaKey) {
+      const next = selectedBlockSet.has(blockId)
+        ? selectedBlockIds.filter((id) => id !== blockId)
+        : [...selectedBlockIds, blockId];
+      const order = new Map(blocks.map((block, index) => [block.id, index]));
+      setSelectedBlockIds(next.sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0)));
+      setSelectionAnchorId(blockId);
+      setSelectionCursorId(blockId);
+    } else {
+      selectRange(selectionAnchorId ?? blockId, blockId);
+    }
+    focusBlock(blockId);
   };
 
   const pasteBlock = (event: ClipboardEvent<HTMLTextAreaElement>, block: ContentBlock, index: number) => {
@@ -184,8 +301,22 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
     }
   };
 
+  const selectedContentBlocks = getSelectedBlocks();
+
   return (
     <div className="block-editor" onClick={() => setMenuBlockId(null)}>
+      {selectedContentBlocks.length > 0 && (
+        <div className="block-selection-toolbar" role="toolbar" aria-label="Ações dos blocos selecionados" onClick={(event) => event.stopPropagation()}>
+          <strong>{selectedContentBlocks.length} {selectedContentBlocks.length === 1 ? "bloco selecionado" : "blocos selecionados"}</strong>
+          <button type="button" aria-label="Copiar seleção" onClick={() => void copyBlocks(selectedContentBlocks)}><Copy size={14} /> Copiar</button>
+          <button type="button" aria-label="Duplicar seleção" onClick={duplicateSelectedBlocks}><Copy size={14} /> Duplicar</button>
+          <button type="button" aria-label="Mover seleção para cima" onClick={() => moveSelection(-1)}><ArrowUp size={14} /> Para cima</button>
+          <button type="button" aria-label="Mover seleção para baixo" onClick={() => moveSelection(1)}><ArrowDown size={14} /> Para baixo</button>
+          <button className="selection-danger-action" type="button" aria-label="Excluir seleção" onClick={deleteSelectedBlocks}><Trash2 size={14} /> Excluir</button>
+          <button className="selection-clear-action" type="button" aria-label="Limpar seleção" onClick={clearSelection}><X size={14} /></button>
+          <span>Shift + clique seleciona um intervalo · Ctrl + D duplica · Delete exclui</span>
+        </div>
+      )}
       {blocks.map((block, index) => {
         const query = block.text.startsWith("/") ? block.text.slice(1).toLowerCase().trim() : "";
         const matches = query
@@ -194,7 +325,18 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
         const showSlashMenu = slashBlockId === block.id && matches.length > 0;
 
         return (
-          <div className={`block-row block-${block.type}`} key={block.id}>
+          <div
+            className={`block-row block-${block.type} ${selectedBlockSet.has(block.id) ? "is-block-selected" : ""}`}
+            key={block.id}
+            aria-selected={selectedBlockSet.has(block.id)}
+            onMouseDown={(event) => handleBlockMouseDown(event, block.id)}
+            onClick={(event) => {
+              if (event.shiftKey) return;
+              setSelectionAnchorId(block.id);
+              setSelectionCursorId(block.id);
+              if (!selectedBlockSet.has(block.id)) setSelectedBlockIds([]);
+            }}
+          >
             <div className="block-gutter">
               <button className="block-handle" type="button" aria-label="Ações do bloco" onClick={(event) => { event.stopPropagation(); setMenuBlockId(menuBlockId === block.id ? null : block.id); }}>
                 <GripVertical size={15} />
@@ -236,7 +378,34 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
                   spellCheck
                   placeholder={block.type === "paragraph" ? "Digite '/' para ver os comandos..." : ""}
                   onFocus={() => setMenuBlockId(null)}
-                  onChange={(event) => onTextChange(block, event.target.value, event.target)}
+                  onChange={(event) => {
+                    onTextChange(block, event.target.value, event.target);
+                    if (selectedBlockSet.has(block.id)) clearSelection();
+                  }}
+                  onCopy={(event) => {
+                    if (!selectedBlockSet.has(block.id) || event.currentTarget.selectionStart !== event.currentTarget.selectionEnd) return;
+                    const copied = getSelectedBlocks();
+                    if (!copied.length) return;
+                    try {
+                      setRichClipboardData(event.clipboardData, copied);
+                      event.preventDefault();
+                      setCopyNotice(`${copied.length} ${copied.length === 1 ? "bloco copiado" : "blocos copiados"}.`);
+                    } catch {
+                      return;
+                    }
+                  }}
+                  onCut={(event) => {
+                    if (!selectedBlockSet.has(block.id) || event.currentTarget.selectionStart !== event.currentTarget.selectionEnd) return;
+                    const copied = getSelectedBlocks();
+                    if (!copied.length) return;
+                    try {
+                      setRichClipboardData(event.clipboardData, copied);
+                      event.preventDefault();
+                      deleteSelectedBlocks();
+                    } catch {
+                      return;
+                    }
+                  }}
                   onPaste={(event) => pasteBlock(event, block, index)}
                   onKeyDown={(event) => {
                     if (showSlashMenu && event.key === "Escape") {
@@ -251,6 +420,63 @@ export function BlockEditor({ blocks, onChange }: BlockEditorProps) {
                     if (showSlashMenu && event.key === "ArrowUp") {
                       event.preventDefault();
                       setSlashIndex((value) => Math.max(value - 1, 0));
+                      return;
+                    }
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      if (selectedBlockIds.length > 0) {
+                        clearSelection();
+                      } else {
+                        setSelectedBlockIds([block.id]);
+                        setSelectionAnchorId(block.id);
+                        setSelectionCursorId(block.id);
+                      }
+                      return;
+                    }
+                    const hasCommandModifier = event.ctrlKey || event.metaKey;
+                    if (hasCommandModifier && event.key.toLowerCase() === "a" && !selectedBlockSet.has(block.id)) {
+                      event.preventDefault();
+                      setSelectedBlockIds([block.id]);
+                      setSelectionAnchorId(block.id);
+                      setSelectionCursorId(block.id);
+                      return;
+                    }
+                    if (hasCommandModifier && event.key.toLowerCase() === "d" && selectedBlockSet.has(block.id)) {
+                      event.preventDefault();
+                      duplicateSelectedBlocks();
+                      return;
+                    }
+                    if (hasCommandModifier && event.shiftKey && (event.key === "ArrowUp" || event.key === "ArrowDown") && selectedBlockSet.has(block.id)) {
+                      event.preventDefault();
+                      moveSelection(event.key === "ArrowUp" ? -1 : 1);
+                      return;
+                    }
+                    if (event.shiftKey && !hasCommandModifier && (event.key === "ArrowUp" || event.key === "ArrowDown") && selectedBlockSet.has(block.id)) {
+                      const currentIndex = blocks.findIndex((item) => item.id === (selectionCursorId ?? block.id));
+                      const targetIndex = currentIndex + (event.key === "ArrowUp" ? -1 : 1);
+                      if (targetIndex >= 0 && targetIndex < blocks.length) {
+                        event.preventDefault();
+                        selectRange(selectionAnchorId ?? block.id, blocks[targetIndex].id);
+                        focusBlock(blocks[targetIndex].id);
+                      }
+                      return;
+                    }
+                    if (!hasCommandModifier && !event.shiftKey && (event.key === "ArrowUp" || event.key === "ArrowDown") && selectedBlockSet.has(block.id)) {
+                      const currentIndex = blocks.findIndex((item) => item.id === block.id);
+                      const targetIndex = currentIndex + (event.key === "ArrowUp" ? -1 : 1);
+                      if (targetIndex >= 0 && targetIndex < blocks.length) {
+                        event.preventDefault();
+                        const targetId = blocks[targetIndex].id;
+                        setSelectedBlockIds([targetId]);
+                        setSelectionAnchorId(targetId);
+                        setSelectionCursorId(targetId);
+                        focusBlock(targetId);
+                      }
+                      return;
+                    }
+                    if ((event.key === "Backspace" || event.key === "Delete") && selectedBlockSet.has(block.id) && event.currentTarget.selectionStart === event.currentTarget.selectionEnd) {
+                      event.preventDefault();
+                      deleteSelectedBlocks();
                       return;
                     }
                     if (event.key === "Enter" && !event.shiftKey) {
