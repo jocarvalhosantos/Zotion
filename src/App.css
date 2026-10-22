@@ -318,6 +318,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .database-table th:last-child { width: 22px; padding: 0; }
 .database-table td { height: 38px; padding: 3px 7px; color: var(--text-soft); border-bottom: 1px solid var(--border); font-size: 11px; }
 .database-table tr:hover td { background: color-mix(in srgb, var(--hover-2) 60%, transparent); }
+.database-table .database-group-row td { height: 31px; padding: 4px 9px; color: var(--text); background: var(--surface-soft); font-weight: 600; }
+.database-table .database-group-row td span { margin-left: 7px; color: var(--muted); font-size: 10px; font-weight: 400; }
+.database-table .database-group-row:hover td { background: var(--surface-soft); }
+.database-table .database-subgroup-row td { height: 28px; padding-left: 22px; background: var(--app-bg); font-size: 10px; }
+.database-table .database-subgroup-row:hover td { background: var(--hover-2); }
 .database-table th:first-child, .database-table td:first-child { padding-left: 9px; }
 .database-table .title-column { overflow: hidden; }
 .database-table th .title-column { color: var(--text-soft); }

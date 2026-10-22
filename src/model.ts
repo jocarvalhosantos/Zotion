@@ -99,6 +99,8 @@ export interface DatabaseViewSettings {
   filterGroups?: DatabaseFilterGroup[];
   filterMatch: "AND" | "OR";
   sorts?: DatabaseSortRule[];
+  groupPropertyId?: string;
+  subGroupPropertyId?: string;
   sortPropertyId: string;
   sortDirection: "Ascending" | "Descending";
 }
@@ -335,6 +337,8 @@ export function createDefaultDatabaseView(): DatabaseViewSettings {
     filterGroups: [],
     filterMatch: "AND",
     sorts: [],
+    groupPropertyId: "",
+    subGroupPropertyId: "",
     sortPropertyId: "",
     sortDirection: "Ascending",
   };

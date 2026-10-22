@@ -24,6 +24,7 @@ import type { DatabaseFilterGroup, DatabaseFilterNode, DatabaseFilterOperator, D
 
 type ViewKind = DatabaseViewLayout;
 type ChartStyle = "Bar" | "Donut";
+type DatabaseTableGroup = { id: string; label: string; rows: DatabaseRow[]; subgroups?: DatabaseTableGroup[] };
 
 const STATUS_LABELS: Record<TaskStatus, string> = { "Not started": "Não iniciada", "In progress": "Em andamento", Done: "Concluída" };
 const PRIORITY_LABELS: Record<Priority, string> = { Low: "Baixa", Medium: "Média", High: "Alta" };
@@ -208,6 +209,8 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
       filters: storedView.filters ?? [],
       filterGroups: storedView.filterGroups ?? [],
       sorts: storedView.sorts ?? (storedView.sortPropertyId ? [{ id: "legacy-sort", propertyId: storedView.sortPropertyId, direction: storedView.sortDirection }] : []),
+      groupPropertyId: storedView.groupPropertyId ?? "",
+      subGroupPropertyId: storedView.subGroupPropertyId ?? "",
     }));
   }, [page.databaseViews]);
   const activeViewId = databaseViews.some((candidate) => candidate.id === page.activeDatabaseViewId)
@@ -457,6 +460,34 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
     return result;
   }, [rows, query, activeView, properties, allPages, filterProperties]);
 
+  const groupRowsByProperty = (items: DatabaseRow[], property: DatabaseProperty): DatabaseTableGroup[] => {
+    const groups = new Map<string, DatabaseTableGroup>();
+    for (const row of items) {
+      const value = getFilterValue(row, property);
+      const label = property.id === "status" && typeof value === "string"
+        ? STATUS_LABELS[value as TaskStatus]
+        : property.id === "priority" && typeof value === "string"
+          ? PRIORITY_LABELS[value as Priority]
+          : property.type === "Relation" || property.type === "Rollup"
+            ? propertyDisplayText(row, property)
+            : propertyValueText(value, property.type);
+      const groupLabel = label.trim() || "Sem valor";
+      if (!groups.has(groupLabel)) groups.set(groupLabel, { id: groupLabel, label: groupLabel, rows: [] });
+      groups.get(groupLabel)!.rows.push(row);
+    }
+    return [...groups.values()].sort((left, right) => left.label.localeCompare(right.label, "pt-BR", { numeric: true, sensitivity: "base" }));
+  };
+
+  const tableGroups = useMemo(() => {
+    const groupProperty = filterProperties.find((property) => property.id === activeView.groupPropertyId);
+    if (!groupProperty) return null;
+    const subGroupProperty = filterProperties.find((property) => property.id === activeView.subGroupPropertyId && property.id !== groupProperty.id);
+    return groupRowsByProperty(visibleRows, groupProperty).map((group) => ({
+      ...group,
+      subgroups: subGroupProperty ? groupRowsByProperty(group.rows, subGroupProperty) : undefined,
+    }));
+  }, [visibleRows, activeView.groupPropertyId, activeView.subGroupPropertyId, filterProperties]);
+
   const updateActiveView = (update: Partial<DatabaseViewSettings>) => {
     onUpdateViews(databaseViews.map((candidate) => candidate.id === activeView.id ? { ...candidate, ...update } : candidate));
   };
@@ -654,14 +685,21 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
       ...properties.filter((property) => property.type === "Rollup" && property.rollupRelationPropertyId === id).map((property) => property.id),
     ]);
     onUpdateProperties(properties.filter((property) => !removedPropertyIds.has(property.id)));
-    onUpdateViews(databaseViews.map((viewSettings) => ({
-      ...viewSettings,
-      filters: viewSettings.filters.filter((filter) => !removedPropertyIds.has(filter.propertyId)),
-      filterGroups: removePropertyFilters(viewSettings.filterGroups ?? [], removedPropertyIds) as DatabaseFilterGroup[],
-      sorts: (viewSettings.sorts ?? []).filter((sort) => !removedPropertyIds.has(sort.propertyId)),
-      sortPropertyId: (viewSettings.sorts ?? []).find((sort) => !removedPropertyIds.has(sort.propertyId))?.propertyId ?? "",
-      sortDirection: (viewSettings.sorts ?? []).find((sort) => !removedPropertyIds.has(sort.propertyId))?.direction ?? "Ascending",
-    })));
+    onUpdateViews(databaseViews.map((viewSettings) => {
+      const sorts = (viewSettings.sorts ?? []).filter((sort) => !removedPropertyIds.has(sort.propertyId));
+      const groupPropertyId = removedPropertyIds.has(viewSettings.groupPropertyId ?? "") ? "" : viewSettings.groupPropertyId ?? "";
+      const subGroupPropertyId = !groupPropertyId || removedPropertyIds.has(viewSettings.subGroupPropertyId ?? "") ? "" : viewSettings.subGroupPropertyId ?? "";
+      return {
+        ...viewSettings,
+        filters: viewSettings.filters.filter((filter) => !removedPropertyIds.has(filter.propertyId)),
+        filterGroups: removePropertyFilters(viewSettings.filterGroups ?? [], removedPropertyIds) as DatabaseFilterGroup[],
+        sorts,
+        sortPropertyId: sorts[0]?.propertyId ?? "",
+        sortDirection: sorts[0]?.direction ?? "Ascending",
+        groupPropertyId,
+        subGroupPropertyId,
+      };
+    }));
     onUpdateRows(rows.map((row) => {
       const next = { ...(row.properties ?? {}) };
       for (const propertyId of removedPropertyIds) delete next[propertyId];
@@ -780,6 +818,18 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
       return `${chartColors[index % chartColors.length]} ${start}% ${chartCursor}%`;
     }).join(", ")})`
     : "conic-gradient(var(--surface-soft) 0% 100%)";
+  const renderTableRow = (row: DatabaseRow): ReactNode => <tr key={row.id}>
+    <td className="title-column"><span className="row-page-icon">▱</span><input data-row-title={row.id} className="cell-title" value={row.title} onChange={(event) => updateRow(row.id, { title: event.target.value })} aria-label="Nome da tarefa" /></td>
+    <td><select className={`status-select status-${row.status.toLowerCase().replaceAll(" ", "-")}`} value={row.status} onChange={(event) => updateRow(row.id, { status: event.target.value as TaskStatus })} aria-label="Status da tarefa">{STATUS_OPTIONS.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></td>
+    <td><select className={`priority-select priority-${row.priority.toLowerCase()}`} value={row.priority} onChange={(event) => updateRow(row.id, { priority: event.target.value as Priority })} aria-label="Prioridade da tarefa">{PRIORITY_OPTIONS.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select></td>
+    <td><input className="cell-date" type="date" value={row.startDate ?? ""} onChange={(event) => updateRow(row.id, { startDate: event.target.value })} aria-label="Data de início" /></td>
+    <td><input className="cell-date" type="date" value={row.dueDate} onChange={(event) => updateRow(row.id, { dueDate: event.target.value })} aria-label="Prazo" /></td>
+    <td><input className="cell-text" value={row.assignee} onChange={(event) => updateRow(row.id, { assignee: event.target.value })} placeholder="Atribuir" aria-label="Responsável" /></td>
+    <td><input className="cell-text" value={row.category} onChange={(event) => updateRow(row.id, { category: event.target.value })} placeholder="Adicionar categoria" aria-label="Categoria" /></td>
+    {properties.map((property) => <td key={property.id}>{renderPropertyCell(row, property)}</td>)}
+    <td className="row-actions"><button type="button" title="Excluir linha" aria-label={`Excluir ${row.title}`} onClick={() => removeRow(row.id)}><Trash2 size={14} /></button></td>
+  </tr>;
+  const tableColSpan = 8 + properties.length;
 
   return (
     <section className="database-view" aria-label={`${page.title} database`}>
@@ -853,6 +903,10 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
               <div className="database-popover-heading"><strong>Visualização</strong><span>Preferências salvas nesta base</span></div>
               <label>Nome<input value={activeView.name} onChange={(event) => updateActiveView({ name: event.target.value })} aria-label="Nome da visualização atual" /></label>
               <label>Layout<select value={activeView.layout} onChange={(event) => updateActiveView({ layout: event.target.value as ViewKind })} aria-label="Layout atual">{VIEW_LAYOUTS.map((layout) => <option key={layout} value={layout}>{VIEW_LABELS[layout]}</option>)}</select></label>
+              {view === "Table" && <>
+                <label>Agrupar por<select value={activeView.groupPropertyId ?? ""} onChange={(event) => updateActiveView({ groupPropertyId: event.target.value, subGroupPropertyId: event.target.value && event.target.value !== activeView.subGroupPropertyId ? activeView.subGroupPropertyId : "" })} aria-label="Agrupar linhas por"><option value="">Sem agrupamento</option>{filterProperties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}</select></label>
+                {activeView.groupPropertyId && <label>Subgrupo por<select value={activeView.subGroupPropertyId ?? ""} onChange={(event) => updateActiveView({ subGroupPropertyId: event.target.value })} aria-label="Subagrupar linhas por"><option value="">Sem subgrupo</option>{filterProperties.filter((property) => property.id !== activeView.groupPropertyId).map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}</select></label>}
+              </>}
               <button className="database-view-delete" type="button" onClick={deleteActiveView} disabled={databaseViews.length <= 1}><Trash2 size={13} /> Excluir visualização</button>
             </div>}
           </div>
@@ -908,19 +962,17 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties,
                 </tr>
               </thead>
               <tbody>
-                {visibleRows.map((row) => (
-                  <tr key={row.id}>
-                    <td className="title-column"><span className="row-page-icon">▱</span><input data-row-title={row.id} className="cell-title" value={row.title} onChange={(event) => updateRow(row.id, { title: event.target.value })} aria-label="Nome da tarefa" /></td>
-                    <td><select className={`status-select status-${row.status.toLowerCase().replaceAll(" ", "-")}`} value={row.status} onChange={(event) => updateRow(row.id, { status: event.target.value as TaskStatus })} aria-label="Status da tarefa">{STATUS_OPTIONS.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></td>
-                    <td><select className={`priority-select priority-${row.priority.toLowerCase()}`} value={row.priority} onChange={(event) => updateRow(row.id, { priority: event.target.value as Priority })} aria-label="Prioridade da tarefa">{PRIORITY_OPTIONS.map((priority) => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}</select></td>
-                    <td><input className="cell-date" type="date" value={row.startDate ?? ""} onChange={(event) => updateRow(row.id, { startDate: event.target.value })} aria-label="Data de início" /></td>
-                    <td><input className="cell-date" type="date" value={row.dueDate} onChange={(event) => updateRow(row.id, { dueDate: event.target.value })} aria-label="Prazo" /></td>
-                    <td><input className="cell-text" value={row.assignee} onChange={(event) => updateRow(row.id, { assignee: event.target.value })} placeholder="Atribuir" aria-label="Responsável" /></td>
-                    <td><input className="cell-text" value={row.category} onChange={(event) => updateRow(row.id, { category: event.target.value })} placeholder="Adicionar categoria" aria-label="Categoria" /></td>
-                    {properties.map((property) => <td key={property.id}>{renderPropertyCell(row, property)}</td>)}
-                    <td className="row-actions"><button type="button" title="Excluir linha" aria-label={`Excluir ${row.title}`} onClick={() => removeRow(row.id)}><Trash2 size={14} /></button></td>
-                  </tr>
-                ))}
+                {tableGroups
+                  ? tableGroups.flatMap((group) => [
+                    <tr className="database-group-row" key={`group-${group.id}`}><td colSpan={tableColSpan}><strong>{group.label}</strong><span>{group.rows.length}</span></td></tr>,
+                    ...(group.subgroups
+                      ? group.subgroups.flatMap((subgroup) => [
+                        <tr className="database-group-row database-subgroup-row" key={`subgroup-${group.id}-${subgroup.id}`}><td colSpan={tableColSpan}><strong>{subgroup.label}</strong><span>{subgroup.rows.length}</span></td></tr>,
+                        ...subgroup.rows.map(renderTableRow),
+                      ])
+                      : group.rows.map(renderTableRow)),
+                  ])
+                  : visibleRows.map(renderTableRow)}
               </tbody>
             </table>
             {visibleRows.length === 0 && <EmptyRows query={query} onAdd={addRow} />}
