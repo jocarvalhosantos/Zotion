@@ -6,7 +6,7 @@ Uma aplicação web de estudo, em português, inspirada nos conceitos observados
 
 - Páginas hierárquicas, favoritos e navegação por trilha.
 - Editor de blocos com títulos, listas, tarefas, citações, destaques, código e divisores. Use `/` ou atalhos Markdown para inserir blocos; copie e cole blocos preservando o tipo dentro da mesma sessão.
-- Bases de dados com vistas de tabela, quadro, lista, calendário, galeria, linha do tempo e gráfico de barras/rosca; propriedades personalizáveis de texto, número, seleção, seleção múltipla, data, checkbox, URL, e-mail, telefone, pessoa (texto simples) e relação local de uma via.
+- Bases de dados com vistas de tabela, quadro, lista, calendário, galeria, linha do tempo e gráfico de barras/rosca; propriedades personalizáveis de texto, número, seleção, seleção múltipla, data, checkbox, URL, e-mail, telefone, pessoa (texto simples), relação local de uma via e rollup calculado.
 - Edição de propriedades nas células e cartões, busca por valores, filtro por status, ordenação por prazo e movimentação de cartões.
 - Busca local em títulos, conteúdo e campos da base.
 - Salvamento automático no armazenamento do navegador, alternância de tema e importação/exportação de backup JSON.

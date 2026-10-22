@@ -290,6 +290,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .relation-cell-options label:hover { background: var(--hover); }
 .relation-cell-options input { accent-color: #386a8f; }
 .relation-cell-options small { padding: 6px 4px; color: var(--muted); font-size: 10px; }
+.rollup-value { display: inline-block; max-width: 210px; overflow: hidden; padding: 4px 6px; color: var(--text-soft); border-radius: 4px; background: var(--surface-soft); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .row-page-icon { display: inline-flex; flex: 0 0 18px; justify-content: center; margin-right: 6px; color: var(--faint); font-size: 15px; }
 .cell-title, .cell-text { display: inline-block; min-width: 0; width: calc(100% - 25px); height: 26px; padding: 3px 4px; color: var(--text-soft); border: 1px solid transparent; border-radius: 4px; outline: 0; background: transparent; font-size: 11px; text-overflow: ellipsis; }
 .cell-title { color: var(--text); font-weight: 500; }

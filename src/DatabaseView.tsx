@@ -18,7 +18,7 @@ import {
   Columns3,
 } from "lucide-react";
 import { PRIORITY_OPTIONS, STATUS_OPTIONS, makeId } from "./model";
-import type { DatabaseProperty, DatabasePropertyType, DatabasePropertyValue, DatabaseRow, Page, Priority, TaskStatus } from "./model";
+import type { DatabaseProperty, DatabasePropertyType, DatabasePropertyValue, DatabaseRow, Page, Priority, RollupFunction, TaskStatus } from "./model";
 
 type ViewKind = "Table" | "Board" | "List" | "Calendar" | "Gallery" | "Timeline" | "Chart";
 type ChartStyle = "Bar" | "Donut";
@@ -26,7 +26,7 @@ type ChartStyle = "Bar" | "Donut";
 const STATUS_LABELS: Record<TaskStatus, string> = { "Not started": "Não iniciada", "In progress": "Em andamento", Done: "Concluída" };
 const PRIORITY_LABELS: Record<Priority, string> = { Low: "Baixa", Medium: "Média", High: "Alta" };
 const VIEW_LABELS: Record<ViewKind, string> = { Table: "Tabela", Board: "Quadro", List: "Lista", Calendar: "Calendário", Gallery: "Galeria", Timeline: "Linha do tempo", Chart: "Gráfico" };
-const PROPERTY_TYPES: DatabasePropertyType[] = ["Text", "Number", "Select", "Multi-select", "Date", "Checkbox", "URL", "Email", "Phone", "Person", "Relation"];
+const PROPERTY_TYPES: DatabasePropertyType[] = ["Text", "Number", "Select", "Multi-select", "Date", "Checkbox", "URL", "Email", "Phone", "Person", "Relation", "Rollup"];
 const PROPERTY_TYPE_LABELS: Record<DatabasePropertyType, string> = {
   Text: "Texto",
   Number: "Número",
@@ -39,7 +39,40 @@ const PROPERTY_TYPE_LABELS: Record<DatabasePropertyType, string> = {
   Phone: "Telefone",
   Person: "Pessoa",
   Relation: "Relação",
+  Rollup: "Rollup",
 };
+const ROLLUP_FUNCTION_LABELS: Record<RollupFunction, string> = {
+  "Show original": "Mostrar original",
+  "Show unique values": "Mostrar valores únicos",
+  "Count all": "Contar todos",
+  "Count values": "Contar valores preenchidos",
+  "Count unique values": "Contar valores únicos",
+  "Count empty": "Contar vazios",
+  "Count not empty": "Contar preenchidos",
+  "Percent empty": "Percentual vazio",
+  "Percent not empty": "Percentual preenchido",
+  Sum: "Soma",
+  Average: "Média",
+  Median: "Mediana",
+  Min: "Mínimo",
+  Max: "Máximo",
+  Range: "Intervalo",
+  "Earliest date": "Data mais antiga",
+  "Latest date": "Data mais recente",
+  "Date range": "Intervalo de datas",
+};
+const ROLLUP_COMMON_FUNCTIONS: RollupFunction[] = ["Show original", "Show unique values", "Count all", "Count values", "Count unique values", "Count empty", "Count not empty", "Percent empty", "Percent not empty"];
+const ROLLUP_NUMBER_FUNCTIONS: RollupFunction[] = ["Sum", "Average", "Median", "Min", "Max", "Range"];
+const ROLLUP_DATE_FUNCTIONS: RollupFunction[] = ["Earliest date", "Latest date", "Date range"];
+const BUILTIN_DATABASE_PROPERTIES: DatabaseProperty[] = [
+  { id: "title", name: "Nome", type: "Text" },
+  { id: "status", name: "Status", type: "Select" },
+  { id: "priority", name: "Prioridade", type: "Select" },
+  { id: "startDate", name: "Início", type: "Date" },
+  { id: "dueDate", name: "Prazo", type: "Date" },
+  { id: "assignee", name: "Responsável", type: "Person" },
+  { id: "category", name: "Categoria", type: "Text" },
+];
 interface DatabaseViewProps {
   page: Page;
   allPages: Page[];
@@ -66,6 +99,21 @@ function propertyValueText(value: DatabasePropertyValue, type: DatabasePropertyT
   return value;
 }
 
+function getRowPropertyValue(row: DatabaseRow, propertyId: string): DatabasePropertyValue {
+  if (propertyId === "title") return row.title;
+  if (propertyId === "status") return row.status;
+  if (propertyId === "priority") return row.priority;
+  if (propertyId === "startDate") return row.startDate || null;
+  if (propertyId === "dueDate") return row.dueDate || null;
+  if (propertyId === "assignee") return row.assignee || null;
+  if (propertyId === "category") return row.category || null;
+  return row.properties?.[propertyId] ?? null;
+}
+
+function isEmptyPropertyValue(value: DatabasePropertyValue): boolean {
+  return value === null || value === "" || (Array.isArray(value) && value.length === 0);
+}
+
 function getCalendarMonth(date: Date, amount: number): Date {
   return new Date(date.getFullYear(), date.getMonth() + amount, 1);
 }
@@ -84,8 +132,89 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties 
   const [propertyType, setPropertyType] = useState<DatabasePropertyType>("Text");
   const [propertyOptions, setPropertyOptions] = useState("");
   const [relationDatabaseId, setRelationDatabaseId] = useState("");
+  const [rollupRelationPropertyId, setRollupRelationPropertyId] = useState("");
+  const [rollupTargetPropertyId, setRollupTargetPropertyId] = useState("title");
+  const [rollupFunction, setRollupFunction] = useState<RollupFunction>("Count all");
   const rows = page.rows ?? [];
   const properties = page.databaseProperties ?? [];
+
+  const rollupRelationProperties = properties.filter((property) => property.type === "Relation");
+  const selectedRollupRelationPropertyId = rollupRelationProperties.some((property) => property.id === rollupRelationPropertyId)
+    ? rollupRelationPropertyId
+    : rollupRelationProperties[0]?.id ?? "";
+  const selectedRollupRelationProperty = rollupRelationProperties.find((property) => property.id === selectedRollupRelationPropertyId);
+  const rollupTargetPage = allPages.find((candidate) => candidate.id === selectedRollupRelationProperty?.relationDatabaseId);
+  const rollupTargetProperties = [
+    ...BUILTIN_DATABASE_PROPERTIES,
+    ...(rollupTargetPage?.databaseProperties ?? []).filter((property) => property.type !== "Relation" && property.type !== "Rollup"),
+  ];
+  const selectedRollupTargetPropertyId = rollupTargetProperties.some((property) => property.id === rollupTargetPropertyId)
+    ? rollupTargetPropertyId
+    : rollupTargetProperties[0]?.id ?? "";
+  const selectedRollupTargetProperty = rollupTargetProperties.find((property) => property.id === selectedRollupTargetPropertyId);
+  const availableRollupFunctions = [
+    ...ROLLUP_COMMON_FUNCTIONS,
+    ...(selectedRollupTargetProperty?.type === "Number" ? ROLLUP_NUMBER_FUNCTIONS : []),
+    ...(selectedRollupTargetProperty?.type === "Date" ? ROLLUP_DATE_FUNCTIONS : []),
+  ];
+  const selectedRollupFunction = availableRollupFunctions.includes(rollupFunction)
+    ? rollupFunction
+    : availableRollupFunctions[0] ?? "Count all";
+
+  const calculateRollup = (row: DatabaseRow, property: DatabaseProperty): string => {
+    const relationProperty = properties.find((candidate) => candidate.id === property.rollupRelationPropertyId && candidate.type === "Relation");
+    if (!relationProperty) return "";
+    const targetPage = allPages.find((candidate) => candidate.id === relationProperty.relationDatabaseId && candidate.kind === "database");
+    if (!targetPage) return "";
+    const relationValue = row.properties?.[relationProperty.id] ?? null;
+    const linkedIds = Array.isArray(relationValue) ? relationValue : typeof relationValue === "string" ? [relationValue] : [];
+    const linkedRows = (targetPage.rows ?? []).filter((targetRow) => linkedIds.includes(targetRow.id));
+    const calculation = property.rollupFunction ?? "Count all";
+    if (calculation === "Show original") return linkedRows.map((linkedRow) => linkedRow.title || "Sem título").join(", ");
+
+    const targetProperty = [
+      ...BUILTIN_DATABASE_PROPERTIES,
+      ...(targetPage.databaseProperties ?? []).filter((candidate) => candidate.type !== "Relation" && candidate.type !== "Rollup"),
+    ].find((candidate) => candidate.id === property.rollupTargetPropertyId);
+    if (!targetProperty) return "";
+    const values = linkedRows.map((linkedRow) => getRowPropertyValue(linkedRow, targetProperty.id));
+    const populatedValues = values.filter((value) => !isEmptyPropertyValue(value));
+    const flattenedValues = populatedValues.flatMap((value) => Array.isArray(value) ? value : value === null ? [] : [value]);
+    const uniqueValues = [...new Map(flattenedValues.map((value) => [`${typeof value}:${String(value)}`, value])).values()];
+    const displayValues = (items: Array<string | number | boolean>) => items.map((value) => propertyValueText(value, targetProperty.type)).join(", ");
+    const numericValues = populatedValues.filter((value): value is number => typeof value === "number");
+    const sortedNumbers = [...numericValues].sort((a, b) => a - b);
+    const dateValues = populatedValues.filter((value): value is string => typeof value === "string" && !Number.isNaN(Date.parse(value)));
+    const sortedDates = [...dateValues].sort();
+    const emptyCount = values.length - populatedValues.length;
+    const numberResult = (value: number) => Number.isInteger(value) ? value.toLocaleString("pt-BR") : value.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
+
+    if (calculation === "Show unique values") return displayValues(uniqueValues);
+    if (calculation === "Count all") return numberResult(values.length);
+    if (calculation === "Count values" || calculation === "Count not empty") return numberResult(populatedValues.length);
+    if (calculation === "Count unique values") return numberResult(uniqueValues.length);
+    if (calculation === "Count empty") return numberResult(emptyCount);
+    if (calculation === "Percent empty") return `${numberResult(values.length ? emptyCount / values.length * 100 : 0)}%`;
+    if (calculation === "Percent not empty") return `${numberResult(values.length ? populatedValues.length / values.length * 100 : 0)}%`;
+    if (calculation === "Sum") return numberResult(numericValues.reduce((sum, value) => sum + value, 0));
+    if (calculation === "Average") return numberResult(numericValues.length ? numericValues.reduce((sum, value) => sum + value, 0) / numericValues.length : 0);
+    if (calculation === "Median") {
+      if (sortedNumbers.length === 0) return "0";
+      const middle = Math.floor(sortedNumbers.length / 2);
+      return numberResult(sortedNumbers.length % 2 ? sortedNumbers[middle] : (sortedNumbers[middle - 1] + sortedNumbers[middle]) / 2);
+    }
+    if (calculation === "Min") return numberResult(sortedNumbers[0] ?? 0);
+    if (calculation === "Max") return numberResult(sortedNumbers.at(-1) ?? 0);
+    if (calculation === "Range") return numberResult((sortedNumbers.at(-1) ?? 0) - (sortedNumbers[0] ?? 0));
+    if (calculation === "Earliest date") return sortedDates[0] ? propertyValueText(sortedDates[0], "Date") : "";
+    if (calculation === "Latest date") return sortedDates.at(-1) ? propertyValueText(sortedDates.at(-1)!, "Date") : "";
+    if (calculation === "Date range") {
+      if (sortedDates.length === 0) return "";
+      const elapsedDays = Math.round((Date.parse(sortedDates.at(-1)!) - Date.parse(sortedDates[0])) / 86400000);
+      return `${numberResult(elapsedDays)} ${elapsedDays === 1 ? "dia" : "dias"}`;
+    }
+    return "";
+  };
 
   const propertyDisplayText = (row: DatabaseRow, property: DatabaseProperty): string => {
     const value = row.properties?.[property.id] ?? null;
@@ -94,6 +223,7 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties 
       const ids = Array.isArray(value) ? value : typeof value === "string" ? [value] : [];
       return ids.map((id) => targetPage?.rows?.find((targetRow) => targetRow.id === id)?.title ?? "").filter(Boolean).join(", ");
     }
+    if (property.type === "Rollup") return calculateRollup(row, property);
     return propertyValueText(value, property.type);
   };
 
@@ -118,6 +248,7 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties 
     const name = propertyName.trim();
     if (!name) return;
     if (propertyType === "Relation" && !allPages.some((candidate) => candidate.id === relationDatabaseId && candidate.kind === "database")) return;
+    if (propertyType === "Rollup" && (!selectedRollupRelationProperty || !selectedRollupTargetProperty)) return;
     const options = propertyOptions.split(",").map((option) => option.trim()).filter(Boolean);
     const property: DatabaseProperty = {
       id: makeId("property"),
@@ -127,6 +258,11 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties 
         ? { options: options.length ? options : ["Opção 1", "Opção 2"] }
         : {}),
       ...(propertyType === "Relation" ? { relationDatabaseId } : {}),
+      ...(propertyType === "Rollup" ? {
+        rollupRelationPropertyId: selectedRollupRelationPropertyId,
+        rollupTargetPropertyId: selectedRollupTargetPropertyId,
+        rollupFunction: selectedRollupFunction,
+      } : {}),
     };
     onUpdateProperties([...properties, property]);
     setPropertyName("");
@@ -138,10 +274,14 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties 
   };
 
   const removeProperty = (id: string) => {
-    onUpdateProperties(properties.filter((property) => property.id !== id));
+    const removedPropertyIds = new Set([
+      id,
+      ...properties.filter((property) => property.type === "Rollup" && property.rollupRelationPropertyId === id).map((property) => property.id),
+    ]);
+    onUpdateProperties(properties.filter((property) => !removedPropertyIds.has(property.id)));
     onUpdateRows(rows.map((row) => {
       const next = { ...(row.properties ?? {}) };
-      delete next[id];
+      for (const propertyId of removedPropertyIds) delete next[propertyId];
       return { ...row, properties: next };
     }));
   };
@@ -159,6 +299,10 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties 
       const selectedIds = Array.isArray(value) ? value : typeof value === "string" ? [value] : [];
       const selectedTitles = targetRows.filter((targetRow) => selectedIds.includes(targetRow.id)).map((targetRow) => targetRow.title);
       return <details className="relation-cell"><summary title={selectedTitles.join(", ")}>{selectedTitles.join(", ") || "Vincular página"}</summary><div className="relation-cell-options">{targetRows.map((targetRow) => <label key={targetRow.id}><input type="checkbox" checked={selectedIds.includes(targetRow.id)} onChange={(event) => updatePropertyValue(row, property, event.target.checked ? [...selectedIds, targetRow.id] : selectedIds.filter((id) => id !== targetRow.id))} /><span>{targetRow.title || "Sem título"}</span></label>)}{targetRows.length === 0 && <small>Essa base ainda não tem páginas.</small>}</div></details>;
+    }
+    if (property.type === "Rollup") {
+      const text = propertyDisplayText(row, property);
+      return <span className="rollup-value" title={`${property.name}: ${text}`}>{text || "—"}</span>;
     }
     if (property.type === "Checkbox") return <input className="property-checkbox" type="checkbox" checked={value === true} onChange={(event) => updatePropertyValue(row, property, event.target.checked)} aria-label={ariaLabel} />;
     if (property.type === "Number") return <input className="cell-text" type="number" value={typeof value === "number" ? value : ""} onChange={(event) => updatePropertyValue(row, property, event.target.value === "" ? null : Number(event.target.value))} aria-label={ariaLabel} placeholder="Número" />;
@@ -227,6 +371,8 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties 
           const targetPage = allPages.find((candidate) => candidate.id === property.relationDatabaseId);
           const ids = Array.isArray(value) ? value : typeof value === "string" ? [value] : [];
           values = ids.map((id) => targetPage?.rows?.find((targetRow) => targetRow.id === id)?.title ?? "");
+        } else if (property?.type === "Rollup") {
+          values = [propertyDisplayText(row, property)];
         } else if (property?.type === "Date" && typeof value === "string" && value) values = [new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR", { month: "short", year: "numeric" })];
         else if (Array.isArray(value)) values = value;
         else if (typeof value === "boolean") values = [value ? "Sim" : "Não"];
@@ -292,7 +438,14 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties 
                 <label>Tipo<select value={propertyType} onChange={(event) => setPropertyType(event.target.value as DatabasePropertyType)} aria-label="Tipo da propriedade">{PROPERTY_TYPES.map((type) => <option key={type} value={type}>{PROPERTY_TYPE_LABELS[type]}</option>)}</select></label>
                 {(propertyType === "Select" || propertyType === "Multi-select") && <label>Opções<input value={propertyOptions} onChange={(event) => setPropertyOptions(event.target.value)} placeholder="Alto, Médio, Baixo" aria-label="Opções separadas por vírgula" /></label>}
                 {propertyType === "Relation" && <label>Base relacionada<select value={relationDatabaseId} onChange={(event) => setRelationDatabaseId(event.target.value)} aria-label="Base relacionada"><option value="">Escolher base</option>{allPages.filter((candidate) => candidate.kind === "database").map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.title}</option>)}</select></label>}
-                <button className="database-new-button" type="submit" disabled={propertyType === "Relation" && !relationDatabaseId}><Plus size={14} /> Adicionar propriedade</button>
+                {propertyType === "Rollup" && (rollupRelationProperties.length === 0
+                  ? <p className="database-property-empty">Crie primeiro uma propriedade de relação nesta base.</p>
+                  : <>
+                    <label>Relação<select value={selectedRollupRelationPropertyId} onChange={(event) => { setRollupRelationPropertyId(event.target.value); setRollupTargetPropertyId("title"); }} aria-label="Relação do rollup">{rollupRelationProperties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}</select></label>
+                    <label>Propriedade relacionada<select value={selectedRollupTargetPropertyId} onChange={(event) => setRollupTargetPropertyId(event.target.value)} aria-label="Propriedade relacionada">{rollupTargetProperties.map((property) => <option key={property.id} value={property.id}>{property.name} · {PROPERTY_TYPE_LABELS[property.type]}</option>)}</select></label>
+                    <label>Calcular<select value={selectedRollupFunction} onChange={(event) => setRollupFunction(event.target.value as RollupFunction)} aria-label="Cálculo do rollup">{availableRollupFunctions.map((calculation) => <option key={calculation} value={calculation}>{ROLLUP_FUNCTION_LABELS[calculation]}</option>)}</select></label>
+                  </>)}
+                <button className="database-new-button" type="submit" disabled={(propertyType === "Relation" && !relationDatabaseId) || (propertyType === "Rollup" && (!selectedRollupRelationProperty || !selectedRollupTargetProperty))}><Plus size={14} /> Adicionar propriedade</button>
               </form>
               <div className="database-property-list">
                 {properties.length === 0 && <span className="database-property-empty">Nenhuma propriedade personalizada.</span>}
@@ -392,7 +545,7 @@ export function DatabaseView({ page, allPages, onUpdateRows, onUpdateProperties 
                   {statusRows.map((row) => <article className="board-card" key={row.id} draggable onDragStart={() => setDraggedRowId(row.id)} onDragEnd={() => setDraggedRowId(null)}>
                     <input className="board-card-title" value={row.title} onChange={(event) => updateRow(row.id, { title: event.target.value })} aria-label="Nome da tarefa" />
                     {row.category && <span className="board-category">{row.category}</span>}
-                    {properties.some((property) => row.properties?.[property.id] !== null && row.properties?.[property.id] !== undefined && row.properties?.[property.id] !== "") && <div className="board-custom-properties">{properties.map((property) => {
+                    {properties.some((property) => propertyDisplayText(row, property) !== "") && <div className="board-custom-properties">{properties.map((property) => {
                       const text = propertyDisplayText(row, property);
                       return text ? <span className="property-value-chip" key={property.id} title={property.name}>{property.name}: {text}</span> : null;
                     })}</div>}

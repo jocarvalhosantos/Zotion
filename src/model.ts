@@ -32,7 +32,28 @@ export type DatabasePropertyType =
   | "Email"
   | "Phone"
   | "Person"
-  | "Relation";
+  | "Relation"
+  | "Rollup";
+
+export type RollupFunction =
+  | "Show original"
+  | "Show unique values"
+  | "Count all"
+  | "Count values"
+  | "Count unique values"
+  | "Count empty"
+  | "Count not empty"
+  | "Percent empty"
+  | "Percent not empty"
+  | "Sum"
+  | "Average"
+  | "Median"
+  | "Min"
+  | "Max"
+  | "Range"
+  | "Earliest date"
+  | "Latest date"
+  | "Date range";
 
 export type DatabasePropertyValue = string | number | boolean | string[] | null;
 
@@ -42,6 +63,9 @@ export interface DatabaseProperty {
   type: DatabasePropertyType;
   options?: string[];
   relationDatabaseId?: string;
+  rollupRelationPropertyId?: string;
+  rollupTargetPropertyId?: string;
+  rollupFunction?: RollupFunction;
 }
 
 export interface DatabaseRow {
@@ -158,6 +182,8 @@ export function createInitialWorkspace(): WorkspaceData {
         databaseProperties: [
           { id: "property-impact", name: "Impacto", type: "Select", options: ["Alto", "Médio", "Baixo"] },
           { id: "property-review", name: "Revisão necessária", type: "Checkbox" },
+          { id: "property-deliverables", name: "Entregas relacionadas", type: "Relation", relationDatabaseId: "deliverables" },
+          { id: "property-planned-effort", name: "Esforço planejado", type: "Rollup", rollupRelationPropertyId: "property-deliverables", rollupTargetPropertyId: "property-effort", rollupFunction: "Sum" },
         ],
         rows: [
           {
@@ -169,7 +195,7 @@ export function createInitialWorkspace(): WorkspaceData {
             dueDate: "2026-11-04",
             assignee: "Alex Morgan",
             category: "Produto",
-            properties: { "property-impact": "Alto", "property-review": true },
+            properties: { "property-impact": "Alto", "property-review": true, "property-deliverables": ["delivery-interface", "delivery-analytics"] },
           },
           {
             id: "row-research",
@@ -180,7 +206,7 @@ export function createInitialWorkspace(): WorkspaceData {
             dueDate: "2026-11-10",
             assignee: "Jordan Lee",
             category: "Pesquisa",
-            properties: { "property-impact": "Médio", "property-review": false },
+            properties: { "property-impact": "Médio", "property-review": false, "property-deliverables": ["delivery-interviews", "delivery-synthesis"] },
           },
           {
             id: "row-guide",
@@ -191,7 +217,7 @@ export function createInitialWorkspace(): WorkspaceData {
             dueDate: "2026-10-21",
             assignee: "Sam Taylor",
             category: "Operações",
-            properties: { "property-impact": "Baixo", "property-review": false },
+            properties: { "property-impact": "Baixo", "property-review": false, "property-deliverables": ["delivery-guide-review"] },
           },
           {
             id: "row-review",
@@ -202,8 +228,27 @@ export function createInitialWorkspace(): WorkspaceData {
             dueDate: "2026-11-15",
             assignee: "",
             category: "Produto",
-            properties: { "property-impact": "Alto", "property-review": true },
+            properties: { "property-impact": "Alto", "property-review": true, "property-deliverables": ["delivery-feedback"] },
           },
+        ],
+      },
+      {
+        id: "deliverables",
+        title: "Entregas vinculadas",
+        icon: "🧩",
+        parentId: null,
+        kind: "database",
+        createdAt: initialTime,
+        updatedAt: initialTime,
+        blocks: [],
+        databaseProperties: [{ id: "property-effort", name: "Pontos de esforço", type: "Number" }],
+        rows: [
+          { id: "delivery-interface", title: "Preparar interface de lançamento", status: "In progress", priority: "High", startDate: "2026-10-22", dueDate: "2026-10-29", assignee: "Alex Morgan", category: "Interface", properties: { "property-effort": 3 } },
+          { id: "delivery-analytics", title: "Configurar métricas do produto", status: "Not started", priority: "Medium", startDate: "2026-10-24", dueDate: "2026-11-01", assignee: "Jordan Lee", category: "Análise", properties: { "property-effort": 5 } },
+          { id: "delivery-interviews", title: "Conduzir entrevistas", status: "In progress", priority: "Medium", startDate: "2026-10-23", dueDate: "2026-11-03", assignee: "Jordan Lee", category: "Pesquisa", properties: { "property-effort": 2 } },
+          { id: "delivery-synthesis", title: "Sintetizar entrevistas", status: "Not started", priority: "Medium", startDate: "2026-10-30", dueDate: "2026-11-07", assignee: "Jordan Lee", category: "Pesquisa", properties: { "property-effort": 4 } },
+          { id: "delivery-guide-review", title: "Revisar guia de integração", status: "Done", priority: "Low", startDate: "2026-10-19", dueDate: "2026-10-21", assignee: "Sam Taylor", category: "Documentação", properties: { "property-effort": 5 } },
+          { id: "delivery-feedback", title: "Classificar feedback", status: "Not started", priority: "High", startDate: "2026-11-10", dueDate: "2026-11-12", assignee: "Alex Morgan", category: "Feedback", properties: { "property-effort": 2 } },
         ],
       },
       {

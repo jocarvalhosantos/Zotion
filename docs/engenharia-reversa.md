@@ -48,6 +48,12 @@ O [estudo de caso público do REA sobre a área de transferência do Notion](htt
 
 A aplicação implementa seu próprio formato: copia o texto simples e uma representação HTML com um marcador `workspace-lab:<id>`, mantendo o bloco estruturado em memória na sessão atual. Ao colar a partir desse marcador na mesma sessão, restaura o tipo e o conteúdo do bloco; se a cópia vier de outro aplicativo, de outra sessão ou não tiver HTML, o navegador usa texto simples. O marcador e o formato não reutilizam IDs nem MIME types do Notion. Esta é uma decisão de implementação inspirada na evidência e não uma alegação de paridade.
 
+## Limite do preload de navegação
+
+A API `__electronApi` do preload contém 232 membros inferidos estaticamente; entre eles estão `navigateToBlock`, `navigateToBlockInTab`, `setActiveBlocks`, `copy`, `paste`, `quickSearchRefresh` e métodos de abas e SQLite. Uma análise REA com orçamento ampliado, Evidence `ev_336da38de67ef3d5fd46074f61a437f996adf5c89daf99408eff72c33f7888f3`, reteve 50.097 nós e 46.258 relações semânticas no preload selecionado, mas ainda ficou parcial e truncada, com 20.809 incógnitas e 160 arquivos fora da seleção.
+
+O traço de `navigateToBlock`, Evidence `ev_a41648e8bbe99080688d49bba0e3c34b72cf95e4e24572a83a019baecc1d571e`, encontrou o nome como membro de `__electronApi`, mas retornou somente um nó, zero arestas e nenhum caminho terminal. Portanto, há evidência do nome exposto no preload; o destino, o chamador e a navegação de página não foram resolvidos. A API não foi tratada como prova de comportamento em execução.
+
 ## Achado focado: processo principal e IPC
 
 Analisei o arquivo `.webpack/main/index.js` isoladamente, usando o mesmo `app.asar` e SHA-256. Evidence da análise: `ev_b4b769964d7bbfdf7575052b2cb0d4790ae5d3e4a28561e850d946c222061ef8`. O REA processou um arquivo selecionado, leu 4.411.723 bytes de texto, visitou 966.691 nós AST, reconheceu 1.796 módulos e registrou 6.020 achados, sem falhas de parse. Os outros 160 arquivos inventariados ficaram fora dessa seleção.
@@ -72,7 +78,7 @@ O inventário do ASAR lista componentes internos para abas, configurações, ati
 | --- | --- | --- |
 | Identidade do aplicativo desktop e empacotamento Electron | Respondida parcialmente | Manifesto, versão `7.40.0`, SHA-256 do `app.asar` e inventário REA; não representa todas as versões do Notion. |
 | API de clipboard do preload | Respondida parcialmente | Dois caminhos estáticos candidatos para escrita de texto/imagem; chamador, payload rico e colagem em runtime continuam desconhecidos. |
-| API exposta pelo preload | Respondida parcialmente | `__electronApi` lista 232 membros, incluindo navegação por bloco, abas, busca rápida, SQLite e reuniões; o status da API é dinâmico e os membros não foram confirmados em execução. |
+| API exposta pelo preload | Respondida parcialmente | `__electronApi` lista 232 membros; o traço de `navigateToBlock` encontrou o nome, mas nenhum caminho de chamada. O status dinâmico e o comportamento em execução continuam desconhecidos. |
 | Processo principal e IPC | Respondida parcialmente | Um canal literal tem transmissão e listener pareados; sete operações têm canal dinâmico e o grafo semântico tem incógnitas. |
 | Carregamento do conteúdo principal no desktop | Respondida parcialmente | `initialUrl` e `getInitialBaseUrl()` são usados para carregar conteúdo em `webContents`; a origem e os recursos carregados não foram resolvidos em runtime. Evidence `ev_96f1d1d4824142ea4eeb6dab14bed0abf69cf31e3d51d40facae2064ae1886bb`. |
 | Serviço SQLite do desktop | Respondida parcialmente | Evidence `ev_aaec5886b5fb14bfc6e3ef3cfb80f7c425d3849fe2d8c8dfdbcf1d01555a7a0f` cobre `.webpack/main/SqliteServer.js` e uma referência a `better-sqlite3`; o esquema e a finalidade dos dados não foram estabelecidos. O addon nativo com metadados de integridade contraditórios não sustenta conclusões. |
@@ -93,7 +99,7 @@ O pacote desktop é uma camada Electron com janelas e comunicação entre proces
 - Bases de dados têm propriedades tipadas e várias vistas; a documentação cobre tabela, quadro, lista, calendário, galeria, cronograma, gráfico, mapa, feed e formulários.
 - A busca oferece atalhos e consultas no espaço de trabalho e em bases de dados.
 
-O modelo de dados da aplicação contém páginas, blocos, referências hierárquicas, favoritos e linhas de bases de dados. A implementação oferece vistas de tabela, quadro, lista, calendário, galeria, linha do tempo e gráficos locais de barras/rosca. Bases podem receber propriedades personalizáveis de texto, número, seleção, seleção múltipla por vírgulas, data, checkbox, URL, e-mail, telefone, pessoa em texto simples e relação local de uma via com linhas de outra base. A relação guarda IDs de linhas no navegador; não há relação inversa automática, rollup ou sincronização com o Notion.
+O modelo de dados da aplicação contém páginas, blocos, referências hierárquicas, favoritos e linhas de bases de dados. A implementação oferece vistas de tabela, quadro, lista, calendário, galeria, linha do tempo e gráficos locais de barras/rosca. Bases podem receber propriedades personalizáveis de texto, número, seleção, seleção múltipla por vírgulas, data, checkbox, URL, e-mail, telefone, pessoa em texto simples, relação local de uma via e rollup calculado. O rollup resume valores de páginas relacionadas com contagem, percentuais, soma, média, mediana, mínimo, máximo, intervalo e cálculos de datas. As relações guardam IDs de linhas no navegador; não há relação inversa automática, fórmulas ou sincronização com o Notion. O funcionamento de relações e rollups nesta reconstrução segue os conceitos da documentação pública e não foi observado no código web do produto.
 
 ```mermaid
 flowchart LR
@@ -109,9 +115,9 @@ flowchart LR
 
 ## Escopo implementado e lacunas
 
-Implementado nesta versão: navegação hierárquica, favoritos, edição e cópia/colagem de blocos, comandos `/` e atalhos Markdown para blocos, tarefas com checkbox, bases com sete vistas (incluindo gráficos locais de barras e rosca), propriedades personalizáveis de tipos básicos, relações locais de uma via entre bases, busca local, filtro/ordenação, tema claro/escuro e backup JSON.
+Implementado nesta versão: navegação hierárquica, favoritos, edição e cópia/colagem de blocos, comandos `/` e atalhos Markdown para blocos, tarefas com checkbox, bases com sete vistas (incluindo gráficos locais de barras e rosca), propriedades personalizáveis de tipos básicos, relações locais de uma via, rollups calculados entre bases, busca local, filtro/ordenação, tema claro/escuro e backup JSON.
 
-Fora do escopo: seleção/cópia estruturada de vários blocos, persistência do clipboard estruturado entre sessões, login, sincronização, colaboração em tempo real, permissões, comentários, integrações, API do Notion, anexos, propriedades automáticas, fórmulas, relações inversas e rollups, filtros combinados, vistas salvas com configurações próprias, gráficos de linha, formulários e paridade visual/comportamental completa. Não há serviço de backend; perfis de navegador não compartilham dados.
+Fora do escopo: seleção/cópia estruturada de vários blocos, persistência do clipboard estruturado entre sessões, login, sincronização, colaboração em tempo real, permissões, comentários, integrações, API do Notion, anexos, propriedades automáticas, fórmulas, relações inversas, filtros combinados, vistas salvas com configurações próprias, gráficos de linha, formulários e paridade visual/comportamental completa. Não há serviço de backend; perfis de navegador não compartilham dados.
 
 ## Referências
 
